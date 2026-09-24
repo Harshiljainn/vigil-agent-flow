@@ -95,16 +95,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             Agents online · 4 MCP servers connected
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1 md:flex">
-              {TECH_BADGES.map((b) => (
-                <span
-                  key={b}
-                  className="rounded-md border border-border bg-surface px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                >
-                  {b}
-                </span>
-              ))}
-            </div>
             <button
               onClick={toggleTheme}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
