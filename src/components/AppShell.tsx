@@ -42,32 +42,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           collapsed ? "w-[74px]" : "w-[258px]",
         )}
       >
-        <div className="px-4 pt-5">
+        <div className="px-4 pt-6">
           <div className="flex items-center gap-2.5">
             <div className="glow-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15">
               <Activity className="h-5 w-5 text-primary" />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <p className="truncate text-base font-semibold tracking-tight">VigilAI</p>
-                <p className="truncate text-[11px] leading-tight text-muted-foreground">
-                  Agentic Disruption Response, with a Human in the Loop
-                </p>
+                <p className="truncate text-lg font-semibold tracking-tight">VigilAI</p>
               </div>
             )}
           </div>
-          {!collapsed && (
-            <div className="mt-3 flex flex-wrap gap-1">
-              {TECH_BADGES.map((b) => (
-                <span
-                  key={b}
-                  className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                >
-                  {b}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         <nav className="mt-5 flex flex-1 flex-col gap-1 px-2">
@@ -110,16 +95,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             Agents online · 4 MCP servers connected
           </div>
           <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1 md:flex">
-              {TECH_BADGES.map((b) => (
-                <span
-                  key={b}
-                  className="rounded-md border border-border bg-surface px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
-                >
-                  {b}
-                </span>
-              ))}
-            </div>
             <button
               onClick={toggleTheme}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
