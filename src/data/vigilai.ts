@@ -775,8 +775,8 @@ function buildHistory(): Decision[] {
   const rnd = mulberry(20260918);
   const rows: Decision[] = [];
   for (let i = 0; i < 48; i++) {
-    const category = CATEGORIES[Math.floor(rnd() * CATEGORIES.length)];
-    const action = ACTIONS[Math.floor(rnd() * ACTIONS.length)];
+    const category = CATEGORIES[Math.floor(rnd() * CATEGORIES.length)]!;
+    const action = ACTIONS[Math.floor(rnd() * ACTIONS.length)]!;
     const irreversible = IRREVERSIBLE_ACTIONS.includes(action);
     const confidence = Math.round(58 + rnd() * 41);
     const cost = Math.round((irreversible ? 9000 + rnd() * 38000 : rnd() * 26000) / 50) * 50;
@@ -800,7 +800,7 @@ function buildHistory(): Decision[] {
       category,
       action,
       mode: auto ? "auto" : "human",
-      human: auto ? null : HUMANS[Math.floor(rnd() * HUMANS.length)],
+      human: auto ? null : HUMANS[Math.floor(rnd() * HUMANS.length)]!,
       cost,
       confidence,
       status: auto ? "auto_executed" : rnd() < 0.78 ? "approved" : "rejected",
@@ -822,7 +822,7 @@ export function seedDecisionsFromAlerts(): Decision[] {
       category: a.category,
       action: opt.action,
       mode: a.status === "rejected" ? "human" : "auto",
-      human: a.status === "rejected" ? HUMANS[i % HUMANS.length] : null,
+      human: a.status === "rejected" ? HUMANS[i % HUMANS.length]! : null,
       cost: a.status === "rejected" ? 0 : opt.cost,
       confidence: a.confidence,
       status: a.status === "rejected" ? "rejected" : "auto_executed",

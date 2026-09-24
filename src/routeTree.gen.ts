@@ -11,8 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AlertsRouteImport } from './routes/alerts'
+import { Route as ArchitectureRouteImport } from './routes/architecture'
+import { Route as AuditRouteImport } from './routes/audit'
+import { Route as EvaluationRouteImport } from './routes/evaluation'
 import { Route as PipelineRouteImport } from './routes/pipeline'
 import { Route as QueueRouteImport } from './routes/queue'
+import { Route as ThresholdsRouteImport } from './routes/thresholds'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,6 +26,21 @@ const IndexRoute = IndexRouteImport.update({
 const AlertsRoute = AlertsRouteImport.update({
   id: '/alerts',
   path: '/alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ArchitectureRoute = ArchitectureRouteImport.update({
+  id: '/architecture',
+  path: '/architecture',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditRoute = AuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EvaluationRoute = EvaluationRouteImport.update({
+  id: '/evaluation',
+  path: '/evaluation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PipelineRoute = PipelineRouteImport.update({
@@ -34,39 +53,85 @@ const QueueRoute = QueueRouteImport.update({
   path: '/queue',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ThresholdsRoute = ThresholdsRouteImport.update({
+  id: '/thresholds',
+  path: '/thresholds',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/architecture': typeof ArchitectureRoute
+  '/audit': typeof AuditRoute
+  '/evaluation': typeof EvaluationRoute
   '/pipeline': typeof PipelineRoute
   '/queue': typeof QueueRoute
+  '/thresholds': typeof ThresholdsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/architecture': typeof ArchitectureRoute
+  '/audit': typeof AuditRoute
+  '/evaluation': typeof EvaluationRoute
   '/pipeline': typeof PipelineRoute
   '/queue': typeof QueueRoute
+  '/thresholds': typeof ThresholdsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/alerts': typeof AlertsRoute
+  '/architecture': typeof ArchitectureRoute
+  '/audit': typeof AuditRoute
+  '/evaluation': typeof EvaluationRoute
   '/pipeline': typeof PipelineRoute
   '/queue': typeof QueueRoute
+  '/thresholds': typeof ThresholdsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/alerts' | '/pipeline' | '/queue'
+  fullPaths:
+    | '/'
+    | '/alerts'
+    | '/architecture'
+    | '/audit'
+    | '/evaluation'
+    | '/pipeline'
+    | '/queue'
+    | '/thresholds'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/alerts' | '/pipeline' | '/queue'
-  id: '__root__' | '/' | '/alerts' | '/pipeline' | '/queue'
+  to:
+    | '/'
+    | '/alerts'
+    | '/architecture'
+    | '/audit'
+    | '/evaluation'
+    | '/pipeline'
+    | '/queue'
+    | '/thresholds'
+  id:
+    | '__root__'
+    | '/'
+    | '/alerts'
+    | '/architecture'
+    | '/audit'
+    | '/evaluation'
+    | '/pipeline'
+    | '/queue'
+    | '/thresholds'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AlertsRoute: typeof AlertsRoute
+  ArchitectureRoute: typeof ArchitectureRoute
+  AuditRoute: typeof AuditRoute
+  EvaluationRoute: typeof EvaluationRoute
   PipelineRoute: typeof PipelineRoute
   QueueRoute: typeof QueueRoute
+  ThresholdsRoute: typeof ThresholdsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -85,6 +150,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/architecture': {
+      id: '/architecture'
+      path: '/architecture'
+      fullPath: '/architecture'
+      preLoaderRoute: typeof ArchitectureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audit': {
+      id: '/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuditRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/evaluation': {
+      id: '/evaluation'
+      path: '/evaluation'
+      fullPath: '/evaluation'
+      preLoaderRoute: typeof EvaluationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pipeline': {
       id: '/pipeline'
       path: '/pipeline'
@@ -99,14 +185,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/thresholds': {
+      id: '/thresholds'
+      path: '/thresholds'
+      fullPath: '/thresholds'
+      preLoaderRoute: typeof ThresholdsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AlertsRoute: AlertsRoute,
+  ArchitectureRoute: ArchitectureRoute,
+  AuditRoute: AuditRoute,
+  EvaluationRoute: EvaluationRoute,
   PipelineRoute: PipelineRoute,
   QueueRoute: QueueRoute,
+  ThresholdsRoute: ThresholdsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -73,7 +73,7 @@ export function VigilProvider({ children }: { children: ReactNode }) {
         if (!alert) return prev;
         const option =
           alert.options.find((o) => o.id === (optionId ?? alert.recommendedOptionId)) ??
-          alert.options[0];
+          alert.options[0]!;
         const row: Decision = {
           id: `DEC-${++seq}`,
           alertId,
