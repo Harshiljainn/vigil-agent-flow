@@ -18,7 +18,7 @@ export const Route = createFileRoute("/thresholds")({
 function Thresholds() {
   const { alerts, thresholds, setThresholds } = useVigil();
   const rows = alerts.map((a) => {
-    const opt = a.options.find((o) => o.id === a.recommendedOptionId) ?? a.options[0];
+    const opt = a.options.find((o) => o.id === a.recommendedOptionId) ?? a.options[0]!;
     return { a, opt, v: gateVerdict(opt.cost, a.confidence, opt.action, thresholds) };
   });
   const autoCount = rows.filter((r) => r.v.auto).length;
