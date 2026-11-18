@@ -4,14 +4,14 @@
  * agents.py, retrieval.py, gate.py). Live pages prefer GET /health `tool_servers`.
  */
 
-/** The three tool servers (backend/vigilai/tools.py SERVER_NAMES). Replay adapters today. */
+/** The three MCP tool servers (backend/vigilai/mcp_servers). Replay by default, live with VIGIL_SIGNALS=live. */
 export const TOOL_SERVERS = ["weather-mcp", "news-mcp", "supplychain-mcp"] as const;
 export type ToolServer = (typeof TOOL_SERVERS)[number];
 
 export const TOOL_SERVER_ROLE: Record<ToolServer, string> = {
-  "weather-mcp": "Weather signals",
-  "news-mcp": "News / geopolitical signals",
-  "supplychain-mcp": "Supplier risk and shipment telemetry signals",
+  "weather-mcp": "Weather signals (Open-Meteo forecasts for 6 monitored ports)",
+  "news-mcp": "News signals (GDELT, filtered to monitored ports and lanes)",
+  "supplychain-mcp": "Simulated shipment exposure, telemetry and supplier data",
 };
 
 export type NodeKind = "signal" | "agent" | "gate" | "comms";
@@ -33,8 +33,8 @@ export const SIGNAL_NODES: PipelineNode[] = TOOL_SERVERS.map((s) => ({
   name: s,
   kind: "signal" as const,
   built: true,
-  role: `Signal agent that queries ${s} (${TOOL_SERVER_ROLE[s].toLowerCase()}). Phase 2 replays recorded scenario signals; no live feed yet.`,
-  code: "vigilai/tools.py collect_signals()",
+  role: `Signal agent that queries ${s} (${TOOL_SERVER_ROLE[s].toLowerCase()}). Replays synthetic scenario signals by default; with VIGIL_SIGNALS=live it calls the real MCP server over stdio.`,
+  code: `vigilai/mcp_servers/${s.replace("-mcp", "")}_server.py · vigilai/live.py`,
 }));
 
 export const PIPELINE_NODES: PipelineNode[] = [
@@ -78,8 +78,8 @@ export type Component = { name: string; detail: string };
 /** Parts that exist as working (or simulated) code in backend/ and frontend/. */
 export const BUILT: Component[] = [
   {
-    name: "Tool servers (replay)",
-    detail: `${TOOL_SERVERS.join(", ")} — MCP-style call surface, replaying recorded signals.`,
+    name: "MCP tool servers",
+    detail: `${TOOL_SERVERS.join(", ")} — real MCP servers (stdio, official Python SDK). Live: Open-Meteo and GDELT; supplychain-mcp is simulated. Default mode replays synthetic signals.`,
   },
   {
     name: "Synthesizer + Strategist",
@@ -118,8 +118,8 @@ export const BUILT: Component[] = [
 export const PLANNED: Component[] = [
   { name: "LangGraph orchestration", detail: "Run the pipeline stages as a graph." },
   {
-    name: "Live data APIs",
-    detail: "Real weather, news and supply-chain feeds behind the tool servers.",
+    name: "Live supply-chain data",
+    detail: "Real shipment, telemetry and supplier feeds behind supplychain-mcp (simulated today).",
   },
   { name: "Database", detail: "Persist alerts and the audit log (with timestamps)." },
   { name: "Notifications", detail: "Stakeholder messages after a decision." },

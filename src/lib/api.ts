@@ -13,6 +13,8 @@ export const API_URL: string = (
 const DEFAULT_TIMEOUT_MS = 5000;
 /** A new run may call Gemini (rate-limited, free tier), so it gets a much longer timeout. */
 const RUN_TIMEOUT_MS = 120_000;
+/** POST /signals/live/run starts three MCP servers and may wait on GDELT (slow, rate-limited). */
+const LIVE_TIMEOUT_MS = 240_000;
 
 // ---------- backend types ----------
 
@@ -35,6 +37,12 @@ export type ApiSignal = {
   summary: string;
   reliability: number;
   supports: boolean;
+  /** Stage 6 live signals only. */
+  location?: string | null;
+  observed_at?: string | null;
+  stale?: boolean;
+  simulated?: boolean;
+  urls?: string[];
 };
 
 export type ApiEvidence = {
@@ -55,7 +63,15 @@ export type ApiAlert = {
   signals: ApiSignal[];
   evidence: ApiEvidence[];
   grounded: boolean;
+  /** "live" = built from real MCP signals (no ground truth, never in evaluation numbers). */
+  origin?: ApiOrigin;
+  location?: string | null;
+  server_status?: Record<string, string>;
+  failed_servers?: string[];
+  rules?: Record<string, string>;
 };
+
+export type ApiOrigin = "synthetic" | "live";
 
 export type ApiMitigationOption = {
   action: string;
@@ -143,6 +159,7 @@ export type ApiAuditRecord = {
   llm_model?: string | null;
   llm_fallback?: boolean;
   fallback_reason?: string | null;
+  origin?: ApiOrigin;
 };
 
 export type ApiHealth = {
@@ -159,7 +176,46 @@ export type ApiHealth = {
   retriever?: ApiRetrieverName;
   corpus?: "v1" | "v2";
   corpus_docs?: number;
+  /** Stage 6: VIGIL_SIGNALS and each MCP server's last known state. */
+  signals?: "replay" | "live";
+  mcp_servers?: ApiServerStatus[];
 };
+
+export type ApiServerState = "ok" | "empty" | "stale_cache" | "failing" | "not_run" | "replay";
+
+export type ApiServerStatus = {
+  name: string;
+  kind: "live" | "simulated";
+  state: ApiServerState;
+  detail: string | null;
+  checked_at: string | null;
+  tools: string[];
+};
+
+export type ApiNewsCounts = {
+  fetched: number;
+  dropped_irrelevant: number;
+  dropped_duplicate: number;
+  kept_articles: number;
+  signals: number;
+};
+
+export type ApiLiveReport = {
+  checked_at: string;
+  servers: ApiServerStatus[];
+  failed_servers: string[];
+  news: ApiNewsCounts | null;
+  weather_ports_checked: number;
+  weather_severe_ports: string[];
+  signals_received: number;
+  contradictions_added: number;
+  groups: number;
+  alerts_built: number;
+  skipped: string[];
+  rules: Record<string, string>;
+};
+
+export type ApiLiveRun = { alerts: ApiAlertView[]; report: ApiLiveReport };
 
 export type ApiRetrieverName = "tfidf" | "chroma" | "hybrid";
 
@@ -200,6 +256,8 @@ export type ApiKpis = {
   escalation_rate: number;
   pending_reviews: number;
   reviews_done: number;
+  /** origin=live alerts; rates above cover synthetic alerts only. */
+  live_alerts?: number;
 };
 
 /** One metrics block from backend/vigilai/evaluate.py metrics(). All rates are 0-1. */
@@ -329,6 +387,8 @@ export const api = {
   alert: (id: string) => request<ApiAlertView>(`/alerts/${encodeURIComponent(id)}`),
   runScenario: () =>
     request<ApiAlertView>("/scenarios/run", { method: "POST", timeoutMs: RUN_TIMEOUT_MS }),
+  runLiveSignals: () =>
+    request<ApiLiveRun>("/signals/live/run", { method: "POST", timeoutMs: LIVE_TIMEOUT_MS }),
   queue: () => request<ApiAuditRecord[]>("/queue"),
   review: (seq: number, body: ApiReviewIn) =>
     request<ApiAuditRecord>(`/queue/${seq}/review`, { method: "POST", body }),

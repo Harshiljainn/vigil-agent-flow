@@ -202,6 +202,26 @@ describe("toAlert", () => {
     expect(a.evidence[1]!.text).toContain("contradicting");
     expect(a.evidence[2]!.agent).toBe("SOP-TEL-01");
   });
+  test("origin defaults to synthetic; no location or failed servers", () => {
+    expect(a.origin).toBe("synthetic");
+    expect(a.location).toBeUndefined();
+    expect(a.failedServers).toBeUndefined();
+  });
+  test("live alert keeps origin, location and failed servers", () => {
+    const l = toAlert({
+      ...VIEW,
+      alert: {
+        ...VIEW.alert,
+        id: "LIVE-0001",
+        origin: "live",
+        location: "Chennai",
+        failed_servers: ["news-mcp"],
+      },
+    });
+    expect(l.origin).toBe("live");
+    expect(l.location).toBe("Chennai");
+    expect(l.failedServers).toEqual(["news-mcp"]);
+  });
 });
 
 describe("toDecisions", () => {

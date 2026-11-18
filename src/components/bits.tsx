@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, Cpu, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Cpu, Radio, ShieldCheck, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ACTION_META,
@@ -128,6 +128,32 @@ export function ReasoningBadge({ source }: { source: ReasoningSource }) {
     >
       {gemini ? <Sparkles className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
       {label}
+    </span>
+  );
+}
+
+/** Live (real MCP signals) vs synthetic (generated scenario) alert. */
+export function OriginBadge({ origin }: { origin: "live" | "synthetic" }) {
+  const live = origin === "live";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+        live ? "text-ok" : "text-muted-foreground",
+      )}
+      style={{
+        backgroundColor: live
+          ? "color-mix(in oklab, var(--ok) 14%, transparent)"
+          : "var(--surface-2)",
+      }}
+      title={
+        live
+          ? "Built from live Open-Meteo / GDELT signals via MCP. No ground truth; excluded from evaluation."
+          : "Synthetic scenario with simulated ground truth."
+      }
+    >
+      <Radio className="h-3 w-3" />
+      {live ? "live" : "synthetic"}
     </span>
   );
 }

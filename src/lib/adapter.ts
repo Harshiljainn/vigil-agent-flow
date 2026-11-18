@@ -168,6 +168,9 @@ export function toAlert(v: ApiAlertView): Alert {
     auditSeq: v.audit_seq,
     gateReasons: v.decision.reasons,
     route: v.decision.route,
+    origin: a.origin ?? "synthetic",
+    ...(a.location ? { location: a.location } : {}),
+    ...(a.failed_servers?.length ? { failedServers: a.failed_servers } : {}),
   };
 }
 

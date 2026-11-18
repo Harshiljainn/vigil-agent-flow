@@ -102,6 +102,12 @@ export type Alert = {
   gateReasons?: string[];
   /** Live data only: the Decision Gate's route for this alert. */
   route?: "auto_execute" | "human_review";
+  /** Backend data only: "live" = built from real MCP signals, "synthetic" = generated scenario. */
+  origin?: "live" | "synthetic";
+  /** Live-signal alerts: the monitored port or lane. */
+  location?: string;
+  /** Live-signal alerts: MCP servers that failed during the fetch. */
+  failedServers?: string[];
 };
 
 export const HUMANS = ["A. Mehta", "R. Iyer", "S. Fernandes", "K. Nair", "D. Kulkarni"];

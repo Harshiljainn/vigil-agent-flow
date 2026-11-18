@@ -6,6 +6,7 @@ import {
   ConfidenceBar,
   delayLabel,
   GroundedBadge,
+  OriginBadge,
   ReversibleTag,
   SeverityDot,
   StatusPill,
@@ -25,6 +26,7 @@ export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean 
         <CategoryBadge category={alert.category} />
         <SeverityDot severity={alert.severity} />
         <span className="font-mono text-xs text-muted-foreground">{alert.id}</span>
+        {alert.origin && <OriginBadge origin={alert.origin} />}
         <span className="text-xs text-muted-foreground">· {timeAgo(alert.createdAt)}</span>
         <div className="ml-auto">
           <StatusPill status={alert.status} />
@@ -37,8 +39,14 @@ export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean 
         <ConfidenceBar value={alert.confidence} />
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <Package className="h-3.5 w-3.5" />
-          {alert.shipmentCount ?? alert.shipments.length} shipments · {alert.supplier}
+          {alert.shipmentCount ?? alert.shipments.length} shipments ·{" "}
+          {alert.location ?? alert.supplier}
         </span>
+        {alert.failedServers && (
+          <span className="text-xs text-warn">
+            Failed servers: {alert.failedServers.join(", ")}
+          </span>
+        )}
       </div>
 
       {!compact && (

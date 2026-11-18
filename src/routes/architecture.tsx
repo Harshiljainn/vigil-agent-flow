@@ -3,6 +3,7 @@ import { Bot, Database, Radio, Send, ShieldCheck, UserCheck } from "lucide-react
 import { PageHeading } from "@/components/bits";
 import { BUILT, PIPELINE_NODES, PLANNED, TOOL_SERVERS, TOOL_SERVER_ROLE } from "@/data/system";
 import { retrievalLabel } from "@/lib/adapter";
+import type { ApiServerStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useVigil } from "@/state/vigil";
 
@@ -29,8 +30,8 @@ const LAYERS = [
   {
     icon: Radio,
     title: "1. Signal ingestion",
-    status: "simulated",
-    body: `Three signal agents query ${TOOL_SERVERS.join(", ")}. Today these replay recorded scenario signals; live feeds are planned.`,
+    status: "built",
+    body: `Three signal agents talk to real MCP servers (${TOOL_SERVERS.join(", ")}) over stdio. With VIGIL_SIGNALS=live, weather-mcp reads Open-Meteo forecasts and news-mcp reads the GDELT news API; supplychain-mcp serves simulated exposure data. The default (replay) replays synthetic scenario signals.`,
   },
   {
     icon: Database,
@@ -83,9 +84,28 @@ function Tag({ status }: { status: string }) {
   );
 }
 
+/** Dot colour for one MCP server's last known state (GET /health mcp_servers). */
+function serverDot(s: ApiServerStatus | undefined): string {
+  if (!s || s.state === "replay" || s.state === "not_run") return "bg-muted-foreground";
+  if (s.state === "failing") return "bg-destructive";
+  if (s.state === "stale_cache") return "bg-warn";
+  return "bg-ok";
+}
+
+/** "live", "simulated" or "failing", plus the state reported by /health. */
+function serverLabel(s: ApiServerStatus | undefined): string {
+  if (!s) return "replay · reported by /health";
+  if (s.state === "replay") return "replay (VIGIL_SIGNALS=replay)";
+  if (s.state === "failing") return "failing · last live run";
+  if (s.state === "not_run") return `${s.kind} · not called yet`;
+  const extra = { ok: "", empty: " · no events", stale_cache: " · stale cache" }[s.state];
+  return `${s.kind}${extra} · last live run`;
+}
+
 function Architecture() {
   const { mode, health } = useVigil();
   const servers = health?.tool_servers ?? [...TOOL_SERVERS];
+  const status = new Map((health?.mcp_servers ?? []).map((s) => [s.name, s]));
   const retrieval = mode === "live" ? retrievalLabel(health) : null;
   return (
     <div>
@@ -176,14 +196,22 @@ function Architecture() {
                 <span
                   className={cn(
                     "h-2 w-2 rounded-full",
-                    mode === "live" ? "bg-ok" : "bg-muted-foreground",
+                    mode === "live" ? serverDot(status.get(m)) : "bg-muted-foreground",
                   )}
                 />
                 <span className="font-mono">{m}</span>
                 <span className="ml-auto text-xs text-muted-foreground">
-                  {mode === "live" ? "replay · reported by /health" : "backend offline"}
+                  {mode === "live" ? serverLabel(status.get(m)) : "backend offline"}
                 </span>
               </div>
+              {mode === "live" && status.get(m)?.detail && (
+                <p
+                  className="ml-4 line-clamp-2 font-mono text-[11px] text-muted-foreground"
+                  title={status.get(m)!.detail ?? undefined}
+                >
+                  {status.get(m)!.detail}
+                </p>
+              )}
               {m in TOOL_SERVER_ROLE && (
                 <p className="ml-4 text-xs text-muted-foreground">
                   {TOOL_SERVER_ROLE[m as keyof typeof TOOL_SERVER_ROLE]}

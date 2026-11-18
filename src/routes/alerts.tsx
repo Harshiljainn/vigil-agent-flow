@@ -1,9 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Search } from "lucide-react";
+import { Radio, Search } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { AlertCard } from "@/components/AlertCard";
 import { PageHeading } from "@/components/bits";
 import { CATEGORY_META, SEVERITY_META, type Category, type Severity } from "@/data/vigilai";
+import { api } from "@/lib/api";
 import { useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/alerts")({
@@ -29,7 +31,31 @@ const selectCls =
   "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-primary";
 
 function AlertFeed() {
-  const { alerts } = useVigil();
+  const { alerts, mode, health, refresh } = useVigil();
+  const [fetching, setFetching] = useState(false);
+  const liveSignals = health?.signals === "live";
+
+  const fetchLive = async () => {
+    setFetching(true);
+    try {
+      const { alerts: built, report } = await api.runLiveSignals();
+      const n = report.news;
+      const news = n
+        ? `news: ${n.fetched} fetched, ${n.dropped_irrelevant} irrelevant, ${n.dropped_duplicate} duplicate, ${n.signals} signal(s)`
+        : "news: no data";
+      const failed = report.failed_servers.length
+        ? ` · failed: ${report.failed_servers.join(", ")}`
+        : "";
+      const msg = `${built.length} live alert(s) · weather: ${report.weather_severe_ports.length}/${report.weather_ports_checked} ports severe · ${news}${failed}`;
+      if (report.failed_servers.length) toast.warning(msg);
+      else toast.success(msg);
+      await refresh();
+    } catch (e) {
+      toast.error(`Live fetch failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setFetching(false);
+    }
+  };
   const [category, setCategory] = useState<Category | "all">("all");
   const [severity, setSeverity] = useState<Severity | "all">("all");
   const [q, setQ] = useState("");
@@ -39,7 +65,7 @@ function AlertFeed() {
       (category === "all" || a.category === category) &&
       (severity === "all" || a.severity === severity) &&
       (q.trim() === "" ||
-        `${a.summary} ${a.id} ${a.supplier} ${a.shipments.join(" ")}`
+        `${a.summary} ${a.id} ${a.supplier} ${a.location ?? ""} ${a.origin ?? ""} ${a.shipments.join(" ")}`
           .toLowerCase()
           .includes(q.toLowerCase())),
   );
@@ -49,6 +75,23 @@ function AlertFeed() {
       <PageHeading
         title="Live Alert Feed"
         subtitle="Every alert is fused from one or more signal agents, then grounded against past incidents and playbooks."
+        actions={
+          mode === "live" ? (
+            <button
+              onClick={() => void fetchLive()}
+              disabled={fetching || !liveSignals}
+              title={
+                liveSignals
+                  ? "Call weather-mcp, news-mcp and supplychain-mcp and run the alerts through the pipeline"
+                  : "Live signals are off: start the backend with VIGIL_SIGNALS=live"
+              }
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <Radio className="h-4 w-4" />
+              {fetching ? "Fetching…" : "Fetch live signals"}
+            </button>
+          ) : undefined
+        }
       />
 
       <div className="panel mb-4 flex flex-wrap items-center gap-2 p-3">
