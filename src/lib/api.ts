@@ -361,6 +361,65 @@ export type ApiRetrievalComparison = {
   without_filter: ApiRetrievalBlock;
 };
 
+/** Stage 8: one routing policy's scores on the AI-labelled independent set. */
+export type ApiAiEvalScores = {
+  n: number;
+  action_accuracy: number;
+  decision_accuracy: number;
+  automation_rate: number;
+  false_auto_execution_rate: number;
+  unnecessary_escalation_rate: number;
+  human_review_workload?: number;
+  false_auto_among_auto?: number;
+};
+
+export type ApiAiEvalBlock = { gate: ApiAiEvalScores; confidence_only: ApiAiEvalScores };
+
+export type ApiAgreement = { n: number; raw_agreement: number | null; kappa: number | null };
+
+export type ApiAgreementPair = { correct_action: ApiAgreement; needs_human_review: ApiAgreement };
+
+/**
+ * results/ai_eval.json via GET /evaluation/ai (Stage 8). The reference labels come from two
+ * AI models used as judges (LLM-as-judge), NOT from humans.
+ */
+export type ApiAiEvaluation = {
+  about: string;
+  labels_source: string;
+  labellers: Record<string, string>;
+  limitations: string[];
+  system: { reasoning_backend: string; retriever: string; corpus: string };
+  definitions?: Record<string, string>;
+  /** action the system chose -> number of scenarios, per category (all 80) */
+  system_actions_by_category?: Partial<Record<ApiCategory, Record<string, number>>>;
+  counts: {
+    scenarios: number;
+    agreed: number;
+    ambiguous: number;
+    action_agreed: number;
+    case_types: Record<string, number>;
+    agreed_by_case_type: Record<string, number>;
+  };
+  agreement: {
+    overall: ApiAgreementPair;
+    by_category: Partial<Record<ApiCategory, ApiAgreementPair>>;
+  };
+  action_accuracy_action_agreed: { n: number; value: number | null };
+  results: ApiAiEvalBlock;
+  results_label_only: ApiAiEvalBlock;
+  by_category: Partial<Record<ApiCategory, { n: number } & Partial<ApiAiEvalBlock>>>;
+  by_case_type: Record<string, { n: number; n_ambiguous: number } & Partial<ApiAiEvalBlock>>;
+  ambiguous: {
+    n: number;
+    gate_escalated?: number;
+    gate_escalation_rate?: number;
+    confidence_only_escalated?: number;
+    confidence_only_escalation_rate?: number;
+    ids: string[];
+    note: string;
+  };
+};
+
 export type AuditFilter = { category?: ApiCategory; route?: ApiRoute; status?: string };
 
 // ---------- transport ----------
@@ -457,6 +516,7 @@ export const api = {
   audit: (filter: AuditFilter = {}) => request<ApiAuditRecord[]>(`/audit${query(filter)}`),
   evaluation: () => request<ApiEvaluation>("/evaluation"),
   retrievalEvaluation: () => request<ApiRetrievalComparison>("/evaluation/retrieval"),
+  aiEvaluation: () => request<ApiAiEvaluation>("/evaluation/ai"),
   kpis: () => request<ApiKpis>("/kpis"),
   login: (username: string, password: string) =>
     request<ApiLogin>("/auth/login", { method: "POST", body: { username, password } }),

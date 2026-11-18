@@ -4,6 +4,8 @@
  * for display. See the mismatch table in the project CLAUDE.md.
  */
 import type {
+  ApiAiEvalBlock,
+  ApiAiEvaluation,
   ApiAlertView,
   ApiAuditRecord,
   ApiCategory,
@@ -398,6 +400,50 @@ export function retrievalRows(block: ApiRetrievalBlock) {
 export function retrievalLabel(h: ApiHealth | null): string | null {
   if (!h?.retriever || !h.corpus) return null;
   return `${h.retriever} · corpus ${h.corpus}${h.corpus_docs ? ` (${h.corpus_docs} docs)` : ""}`;
+}
+
+// ---------- Stage 8: independent evaluation (AI labels, LLM-as-judge, not humans) ----------
+
+export function isAiEvaluation(x: unknown): x is ApiAiEvaluation {
+  const r = x as ApiAiEvaluation | null;
+  return (
+    !!r &&
+    typeof r === "object" &&
+    typeof r.labels_source === "string" &&
+    Array.isArray(r.limitations) &&
+    typeof r.results?.gate?.decision_accuracy === "number" &&
+    typeof r.results?.confidence_only?.decision_accuracy === "number" &&
+    !!r.agreement?.overall?.correct_action &&
+    !!r.agreement?.overall?.needs_human_review
+  );
+}
+
+export const AI_EVAL_METRICS = [
+  ["action_accuracy", "Action accuracy"],
+  ["decision_accuracy", "Decision accuracy"],
+  ["automation_rate", "Automation rate"],
+  ["false_auto_execution_rate", "False auto-exec"],
+  ["unnecessary_escalation_rate", "Unneeded escalation"],
+] as const;
+
+/** One chart row per metric, in percent (display only). */
+export function aiEvalRows(block: ApiAiEvalBlock) {
+  return AI_EVAL_METRICS.map(([k, label]) => ({
+    metric: label,
+    gate: pct1(block.gate[k]),
+    baseline: pct1(block.confidence_only[k]),
+  }));
+}
+
+/** Kappa with 2 decimals; "undefined" when the backend could not compute it (null). */
+export function fmtKappa(k: number | null | undefined): string {
+  return typeof k === "number" ? k.toFixed(2) : "undefined";
+}
+
+/** "conflicting_signals" -> "Conflicting signals". */
+export function caseTypeLabel(t: string): string {
+  const s = t.replace(/_/g, " ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Rate 0-1 -> percent with one decimal (display only). */

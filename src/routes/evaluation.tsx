@@ -19,6 +19,7 @@ import { CATEGORY_META } from "@/data/vigilai";
 import {
   ApiError,
   api,
+  type ApiAiEvaluation,
   type ApiCategory,
   type ApiEvalMetrics,
   type ApiEvaluation,
@@ -26,6 +27,10 @@ import {
 } from "@/lib/api";
 import {
   RETRIEVERS,
+  aiEvalRows,
+  caseTypeLabel,
+  fmtKappa,
+  isAiEvaluation,
   isEvaluation,
   isRetrievalComparison,
   paretoSeries,
@@ -45,7 +50,7 @@ export const Route = createFileRoute("/evaluation")({
       {
         name: "description",
         content:
-          "Decision Gate vs confidence-only baseline on synthetic scenarios, with a confidence-threshold sweep, and a TF-IDF vs ChromaDB vs hybrid retrieval comparison.",
+          "Decision Gate vs confidence-only baseline on synthetic scenarios, with a confidence-threshold sweep, a TF-IDF vs ChromaDB vs hybrid retrieval comparison, and an independent set labelled by two AI models (LLM-as-judge, not humans).",
       },
       { property: "og:title", content: "Evaluation — VigilAI" },
       {
@@ -460,6 +465,258 @@ function Evaluation() {
       </div>
 
       <RetrievalSection />
+      <AiEvalSection />
+    </div>
+  );
+}
+
+/**
+ * Stage 8: results/ai_eval.json via GET /evaluation/ai (live mode only). The reference labels
+ * come from two AI models used as judges (LLM-as-judge), not from humans.
+ */
+function AiEvalSection() {
+  const [data, setData] = useState<ApiAiEvaluation | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .aiEvaluation()
+      .then((raw) => {
+        if (cancelled) return;
+        if (isAiEvaluation(raw)) setData(raw);
+        else setError("GET /evaluation/ai returned an unexpected shape.");
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? "results/ai_eval.json not found. Run `python -m vigilai.ai_eval` in backend/."
+            : e instanceof Error
+              ? e.message
+              : String(e),
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rows = data ? aiEvalRows(data.results) : [];
+  const amb = data?.ambiguous;
+
+  return (
+    <div className="panel mt-4 p-4">
+      <div className="mb-3">
+        <p className="text-sm font-medium">Independent evaluation</p>
+        <p className="text-xs text-muted-foreground">
+          {data
+            ? `${data.counts.scenarios} hand-written synthetic scenarios · labels from two AI models (LLM-as-judge), not humans · system: ${data.system.reasoning_backend} backend, ${data.system.retriever} on corpus ${data.system.corpus}`
+            : "Hand-written synthetic scenarios labelled by two AI models (LLM-as-judge), not humans"}
+        </p>
+      </div>
+
+      {error ? (
+        <p className="text-sm text-muted-foreground">{error}</p>
+      ) : !data ? (
+        <p className="text-sm text-muted-foreground">Loading independent evaluation…</p>
+      ) : (
+        <>
+          <div className="mb-4 rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs">
+            <span className="font-medium">AI labels, not human labels.</span> {data.labels_source}.
+            Labellers: {Object.values(data.labellers).join("; ")}.
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-5">
+            <div className="overflow-x-auto lg:col-span-2">
+              <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                Labeller agreement (all {data.counts.scenarios})
+              </p>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="p-3">Answer</th>
+                    <th className="pr-3">Raw agreement</th>
+                    <th className="pr-3">Cohen's κ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(
+                    [
+                      ["correct_action", "Correct action"],
+                      ["needs_human_review", "Needs human review"],
+                    ] as const
+                  ).map(([k, label]) => {
+                    const a = data.agreement.overall[k];
+                    return (
+                      <tr key={k} className="border-b border-border/60">
+                        <td className="p-3">{label}</td>
+                        <td className="pr-3 font-mono">
+                          {a.raw_agreement === null ? "—" : `${fmt(a.raw_agreement)}%`}
+                        </td>
+                        <td className="pr-3 font-mono">{fmtKappa(a.kappa)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="px-1 py-3 text-xs text-muted-foreground">
+                Agreed on both answers: {data.counts.agreed} scenarios (scored below). Ambiguous
+                (they disagree): {data.counts.ambiguous}.
+                {data.definitions?.kappa_note ? ` ${data.definitions.kappa_note}` : ""}
+              </p>
+
+              <p className="mb-1 mt-2 text-xs font-medium uppercase text-muted-foreground">
+                Ambiguous set routing
+              </p>
+              {amb && amb.n > 0 ? (
+                <p className="text-sm">
+                  Decision Gate escalated{" "}
+                  <span className="font-mono">
+                    {amb.gate_escalated} / {amb.n}
+                  </span>{" "}
+                  · confidence-only escalated{" "}
+                  <span className="font-mono">
+                    {amb.confidence_only_escalated} / {amb.n}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No ambiguous scenarios.</p>
+              )}
+              <p className="mt-1 text-xs text-muted-foreground">{amb?.note}</p>
+            </div>
+
+            <div className="lg:col-span-3">
+              <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                Agreed set (n={data.counts.agreed}): Decision Gate vs confidence-only
+              </p>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={rows} margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="metric"
+                    stroke="var(--muted-foreground)"
+                    fontSize={10}
+                    interval={0}
+                  />
+                  <YAxis domain={[0, 100]} stroke="var(--muted-foreground)" fontSize={11} />
+                  <Tooltip
+                    contentStyle={tt}
+                    cursor={{ fill: "var(--surface-2)" }}
+                    formatter={(v: number, name: string) => [`${v}%`, name]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar
+                    dataKey="gate"
+                    name="Decision Gate"
+                    fill="var(--primary)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="baseline"
+                    name="Confidence-only"
+                    fill="var(--warn)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="overflow-x-auto">
+              <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                By hard-case type (agreed set)
+              </p>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="p-2">Type</th>
+                    <th className="pr-2">n</th>
+                    <th className="pr-2">Action acc.</th>
+                    <th className="pr-2">Gate dec. acc.</th>
+                    <th className="pr-2">Conf-only dec. acc.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(data.by_case_type).map(([t, v]) => (
+                    <tr key={t} className="border-b border-border/60">
+                      <td className="p-2">{caseTypeLabel(t)}</td>
+                      <td className="pr-2 font-mono">
+                        {v.n}
+                        {v.n_ambiguous ? (
+                          <span className="text-muted-foreground"> (+{v.n_ambiguous} amb.)</span>
+                        ) : null}
+                      </td>
+                      <td className="pr-2 font-mono">
+                        {v.gate ? `${fmt(v.gate.action_accuracy)}%` : "—"}
+                      </td>
+                      <td className="pr-2 font-mono">
+                        {v.gate ? `${fmt(v.gate.decision_accuracy)}%` : "—"}
+                      </td>
+                      <td className="pr-2 font-mono">
+                        {v.confidence_only ? `${fmt(v.confidence_only.decision_accuracy)}%` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="overflow-x-auto">
+              <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                By category
+              </p>
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs uppercase text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="p-2">Category</th>
+                    <th className="pr-2">κ action</th>
+                    <th className="pr-2">κ review</th>
+                    <th className="pr-2">n agreed</th>
+                    <th className="pr-2">Gate dec. acc.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(Object.keys(data.agreement.by_category) as ApiCategory[]).map((c) => {
+                    const ag = data.agreement.by_category[c];
+                    const r = data.by_category[c];
+                    return (
+                      <tr key={c} className="border-b border-border/60">
+                        <td className="p-2">
+                          {CATEGORY_META[toCategory(c)].label}
+                          {data.system_actions_by_category?.[c] && (
+                            <div className="font-mono text-[10px] text-muted-foreground">
+                              system:{" "}
+                              {Object.entries(data.system_actions_by_category[c] ?? {})
+                                .map(([a, n]) => `${a} ×${n}`)
+                                .join(", ")}
+                            </div>
+                          )}
+                        </td>
+                        <td className="pr-2 font-mono">{fmtKappa(ag?.correct_action.kappa)}</td>
+                        <td className="pr-2 font-mono">{fmtKappa(ag?.needs_human_review.kappa)}</td>
+                        <td className="pr-2 font-mono">{r?.n ?? 0}</td>
+                        <td className="pr-2 font-mono">
+                          {r?.gate ? `${fmt(r.gate.decision_accuracy)}%` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="mt-4 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">Limitations</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {data.limitations.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
     </div>
   );
 }
