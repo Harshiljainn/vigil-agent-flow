@@ -4,9 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ACTION_TYPE_BY_BACKEND,
+  isEvaluation,
   kpisFromDemo,
-  overrideNote,
-  parseOverride,
+  paretoSeries,
+  sortDecisions,
+  sweepPointAt,
   toActionType,
   toAlert,
   toCategory,
@@ -16,7 +18,8 @@ import {
   toStatus,
   toThresholds,
 } from "./adapter";
-import type { ApiAlertView, ApiAuditRecord, ApiKpis } from "./api";
+import type { ApiAlertView, ApiAuditRecord, ApiEvaluation, ApiKpis } from "./api";
+import type { Decision } from "../data/vigilai";
 
 const TH = { cost_limit_usd: 12000, confidence_min: 0.78, require_reversible: true };
 
@@ -106,6 +109,8 @@ function rec(p: Partial<ApiAuditRecord> & { seq: number }): ApiAuditRecord {
     evidence_ids: [],
     review_of: null,
     note: null,
+    override: false,
+    recommended_action: null,
     ...p,
   };
 }
@@ -199,7 +204,14 @@ describe("toDecisions", () => {
       review_of: 3,
       actor: "S. Fernandes",
       status: "approved(simulated)",
-      note: overrideNote("switch_supplier", "qualify_backup_supplier"),
+      note: "cheaper and reversible",
+      // Modify & Approve: the review record carries the chosen option's own values
+      action: "qualify_backup_supplier",
+      cost_usd: 9000,
+      confidence: 0.75,
+      reversible: true,
+      override: true,
+      recommended_action: "switch_supplier",
     }),
   ];
   const ds = toDecisions(audit);
@@ -221,7 +233,7 @@ describe("toDecisions", () => {
     expect(d.status).toBe("approved");
     expect(d.override).toBeUndefined();
   });
-  test("override from note is visible", () => {
+  test("override shows the chosen option's real action, cost, confidence, reversibility", () => {
     const d = ds[0]!;
     expect(d.override).toEqual({
       recommended: "switch_supplier",
@@ -229,10 +241,24 @@ describe("toDecisions", () => {
     });
     expect(d.backendAction).toBe("qualify_backup_supplier");
     expect(d.action).toBe("split_order");
+    expect(d.cost).toBe(9000);
+    expect(d.confidence).toBe(75);
+    expect(d.reversible).toBe(true);
+    expect(d.note).toBe("cheaper and reversible");
   });
-  test("parseOverride ignores ordinary notes", () => {
-    expect(parseOverride("looks fine")).toBeNull();
-    expect(parseOverride(null)).toBeNull();
+  test("a note alone is never treated as an override", () => {
+    const [d] = toDecisions([
+      rec({ seq: 1 }),
+      rec({
+        seq: 2,
+        review_of: 1,
+        status: "approved(simulated)",
+        note: "override: approved x instead of recommended y",
+      }),
+    ]);
+    expect(d!.override).toBeUndefined();
+    expect(d!.backendAction).toBe("switch_supplier");
+    expect(d!.cost).toBe(15000);
   });
 });
 
@@ -265,5 +291,97 @@ describe("KPIs agree with each other", () => {
     expect(d.activeAlerts).toBe(1);
     expect(d.decisions).toBe(1);
     expect(d.autoPct + d.escalatedPct).toBe(100);
+  });
+});
+
+describe("evaluation (summary.json)", () => {
+  const m = (auto: number, falseAuto: number) => ({
+    n: 10,
+    decision_accuracy: 0.5,
+    automation_rate: auto,
+    human_review_workload: 1 - auto,
+    false_auto_execution_rate: falseAuto,
+    false_auto_among_auto: 0,
+    unnecessary_escalation_rate: 0,
+  });
+  const sweep = [
+    { confidence_min: 0.5, gate: m(0.7417, 0.2625), confidence_only: m(0.7542, 0.275) },
+    { confidence_min: 0.78, gate: m(0.4875, 0.1333), confidence_only: m(0.4958, 0.1417) },
+  ];
+  test("pareto series: x = false auto %, y = automation %, one point per threshold", () => {
+    const s = paretoSeries(sweep);
+    expect(s.gate).toEqual([
+      { threshold: 0.5, automation: 74.2, falseAuto: 26.3 },
+      { threshold: 0.78, automation: 48.8, falseAuto: 13.3 },
+    ]);
+    expect(s.baseline[1]).toEqual({ threshold: 0.78, automation: 49.6, falseAuto: 14.2 });
+  });
+  test("current threshold is marked only when it was swept", () => {
+    expect(sweepPointAt(sweep, 78 / 100)?.confidence_min).toBe(0.78);
+    expect(sweepPointAt(sweep, 0.8)).toBeNull();
+  });
+  test("isEvaluation rejects other shapes", () => {
+    expect(isEvaluation(null)).toBe(false);
+    expect(isEvaluation({ summary: {} })).toBe(false);
+  });
+  test("real backend summary.json is accepted and has the per-category breakdown", () => {
+    const p = join(import.meta.dir, "../../../backend/results/summary.json");
+    if (!existsSync(p)) return; // backend not checked out next to frontend
+    const e = JSON.parse(readFileSync(p, "utf8")) as ApiEvaluation;
+    expect(isEvaluation(e)).toBe(true);
+    expect(e.summary.note).toContain("SYNTHETIC");
+    expect(sweepPointAt(e.sweep_top1, 0.78)?.gate).toEqual(e.summary.gate);
+    const top1 = Object.values(e.by_category!.top1);
+    expect(top1.reduce((n, c) => n + c.gate.n, 0)).toBe(e.summary.gate.n);
+  });
+});
+
+describe("audit sorting", () => {
+  const d = (id: string, cost: number, human: string | null, mode: "auto" | "human"): Decision => ({
+    id,
+    alertId: "A",
+    timestamp: "",
+    category: "weather",
+    action: "reroute",
+    mode,
+    human,
+    cost,
+    confidence: 80,
+    status: mode === "auto" ? "auto_executed" : "pending",
+    outcome: "pending",
+  });
+  const rows = [
+    d("DEC-2", 500, null, "human"),
+    d("DEC-1", 900, "R", "human"),
+    d("DEC-3", 100, null, "auto"),
+  ];
+  test("numeric asc / desc", () => {
+    expect(sortDecisions(rows, "cost", "asc").map((r) => r.id)).toEqual([
+      "DEC-3",
+      "DEC-2",
+      "DEC-1",
+    ]);
+    expect(sortDecisions(rows, "cost", "desc").map((r) => r.id)).toEqual([
+      "DEC-1",
+      "DEC-2",
+      "DEC-3",
+    ]);
+  });
+  test("string sort; missing values last in both directions", () => {
+    expect(sortDecisions(rows, "id", "asc").map((r) => r.id)).toEqual(["DEC-1", "DEC-2", "DEC-3"]);
+    expect(sortDecisions(rows, "human", "asc").map((r) => r.id)).toEqual([
+      "DEC-3",
+      "DEC-1",
+      "DEC-2",
+    ]);
+    expect(sortDecisions(rows, "human", "desc").map((r) => r.id)).toEqual([
+      "DEC-1",
+      "DEC-3",
+      "DEC-2",
+    ]);
+  });
+  test("does not mutate the input", () => {
+    sortDecisions(rows, "cost", "asc");
+    expect(rows.map((r) => r.id)).toEqual(["DEC-2", "DEC-1", "DEC-3"]);
   });
 });

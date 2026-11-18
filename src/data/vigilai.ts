@@ -23,17 +23,17 @@ export type ActionType =
 export type Status = "auto_executed" | "pending" | "approved" | "rejected";
 
 export const CATEGORY_META: Record<Category, { label: string; color: string; agent: string }> = {
-  weather: { label: "Weather", color: "var(--cat-weather)", agent: "WeatherAgent" },
-  geopolitical: { label: "Geopolitical", color: "var(--cat-geopolitical)", agent: "GeoNewsAgent" },
-  labor: { label: "Labor", color: "var(--cat-labor)", agent: "GeoNewsAgent" },
-  regulatory: { label: "Regulatory", color: "var(--cat-regulatory)", agent: "ComplianceAgent" },
-  health: { label: "Health", color: "var(--cat-health)", agent: "GeoNewsAgent" },
-  cyber: { label: "Cyber", color: "var(--cat-cyber)", agent: "CyberSignalAgent" },
-  supplier: { label: "Supplier Risk", color: "var(--cat-supplier)", agent: "SupplierRiskAgent" },
+  weather: { label: "Weather", color: "var(--cat-weather)", agent: "weather-mcp" },
+  geopolitical: { label: "Geopolitical", color: "var(--cat-geopolitical)", agent: "news-mcp" },
+  labor: { label: "Labor", color: "var(--cat-labor)", agent: "news-mcp" },
+  regulatory: { label: "Regulatory", color: "var(--cat-regulatory)", agent: "news-mcp" },
+  health: { label: "Health", color: "var(--cat-health)", agent: "news-mcp" },
+  cyber: { label: "Cyber", color: "var(--cat-cyber)", agent: "news-mcp" },
+  supplier: { label: "Supplier Risk", color: "var(--cat-supplier)", agent: "supplychain-mcp" },
   telemetry: {
     label: "Shipment Telemetry",
     color: "var(--cat-telemetry)",
-    agent: "ShipmentTelemetryAgent",
+    agent: "supplychain-mcp",
   },
 };
 
@@ -77,6 +77,8 @@ export type MitigationOption = {
   delayHours?: number;
   /** Live data only: recommendation confidence used by the gate, 0-100. */
   confidence?: number;
+  /** Live data only: the backend's exact 0-1 confidence (the gate compares this value). */
+  confidenceExact?: number;
 };
 
 export type Alert = {
@@ -98,6 +100,8 @@ export type Alert = {
   auditSeq?: number;
   /** Live data only: the Decision Gate's own reasons for its route. */
   gateReasons?: string[];
+  /** Live data only: the Decision Gate's route for this alert. */
+  route?: "auto_execute" | "human_review";
 };
 
 export const HUMANS = ["A. Mehta", "R. Iyer", "S. Fernandes", "K. Nair", "D. Kulkarni"];
@@ -120,12 +124,12 @@ export const ALERTS: Alert[] = [
     supplier: "Kaveri Components Pvt Ltd",
     evidence: [
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "Dockworkers' union announced 72h stoppage notice at Chennai Port from Sep 19.",
         grounded: false,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "3 containers scheduled for Chennai berth within the strike window.",
         grounded: false,
       },
@@ -172,12 +176,12 @@ export const ALERTS: Alert[] = [
     supplier: "Bengal Marine Forwarders",
     evidence: [
       {
-        agent: "WeatherAgent",
+        agent: "weather-mcp",
         text: "IMD severe cyclone warning, sustained winds 120 km/h, landfall in 38h.",
         grounded: false,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "5 vessels inside forecast cone; 2 already reduced speed to 8 kn.",
         grounded: false,
       },
@@ -217,7 +221,7 @@ export const ALERTS: Alert[] = [
     supplier: "ColdLink Logistics",
     evidence: [
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "Reefer setpoint 4°C, last 6 readings averaged 6.4°C and rising.",
         grounded: false,
       },
@@ -257,12 +261,12 @@ export const ALERTS: Alert[] = [
     supplier: "Anhui Precision Metals",
     evidence: [
       {
-        agent: "SupplierRiskAgent",
+        agent: "supplychain-mcp",
         text: "Credit score dropped 611 -> 488 in 30 days; two late-payment filings.",
         grounded: false,
       },
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "Local press reports plant running single shift since Aug 28.",
         grounded: false,
       },
@@ -302,12 +306,12 @@ export const ALERTS: Alert[] = [
     supplier: "Levant Freight Alliance",
     evidence: [
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "Two carriers suspended Bab-el-Mandeb transits after overnight incident.",
         grounded: false,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "4 bookings still routed via Suez with ETA inside the advisory window.",
         grounded: false,
       },
@@ -354,12 +358,12 @@ export const ALERTS: Alert[] = [
     supplier: "NorthGate 3PL",
     evidence: [
       {
-        agent: "CyberSignalAgent",
+        agent: "news-mcp",
         text: "Provider status page reports encrypted WMS cluster; ETA unknown.",
         grounded: false,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "No scan events from Pune DC for 4h 20m (baseline: every 6 min).",
         grounded: false,
       },
@@ -399,7 +403,7 @@ export const ALERTS: Alert[] = [
     supplier: "Iberia Cells S.A.",
     evidence: [
       {
-        agent: "ComplianceAgent",
+        agent: "news-mcp",
         text: "Regulation update indexed: declaration of conformity now mandatory at entry.",
         grounded: true,
       },
@@ -432,12 +436,12 @@ export const ALERTS: Alert[] = [
     supplier: "Surat Pack Industries",
     evidence: [
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "District health bulletin: 31% spike in cases, factory absenteeism ~18%.",
         grounded: false,
       },
       {
-        agent: "SupplierRiskAgent",
+        agent: "supplychain-mcp",
         text: "Vendor confirmed output at 82% of committed capacity this week.",
         grounded: false,
       },
@@ -472,12 +476,12 @@ export const ALERTS: Alert[] = [
     supplier: "Grand Trunk Carriers",
     evidence: [
       {
-        agent: "WeatherAgent",
+        agent: "weather-mcp",
         text: "Visibility forecast under 200 m between 02:00-07:00 on NH-44.",
         grounded: false,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "2 trucks projected inside the window; slack of 9h in both ETAs.",
         grounded: false,
       },
@@ -505,7 +509,7 @@ export const ALERTS: Alert[] = [
     supplier: "Central India Roadways",
     evidence: [
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "Telematics silence 90 min, resumed on-route with 12 min ETA slip.",
         grounded: false,
       },
@@ -533,12 +537,12 @@ export const ALERTS: Alert[] = [
     supplier: "Ningbo MagTech",
     evidence: [
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "Ministry consultation draft adds magnet grade N52 to controlled list.",
         grounded: false,
       },
       {
-        agent: "ComplianceAgent",
+        agent: "news-mcp",
         text: "Three open POs reference N52 grade with shipment after Oct 5.",
         grounded: true,
       },
@@ -578,7 +582,7 @@ export const ALERTS: Alert[] = [
     supplier: "Kaveri Components Pvt Ltd",
     evidence: [
       {
-        agent: "SupplierRiskAgent",
+        agent: "supplychain-mcp",
         text: "OTD 71% vs 94% contractual; 4 of 14 lines late by >3 days.",
         grounded: false,
       },
@@ -618,12 +622,12 @@ export const ALERTS: Alert[] = [
     supplier: "Westline Rail Logistics",
     evidence: [
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "Union notice: strict rulebook working from Sep 19, ~30% slower turnarounds.",
         grounded: false,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "Dwell time at Mundra ICD already up from 14h to 26h.",
         grounded: false,
       },
@@ -663,7 +667,7 @@ export const ALERTS: Alert[] = [
     supplier: "Multiple (12 vendors)",
     evidence: [
       {
-        agent: "CyberSignalAgent",
+        agent: "news-mcp",
         text: "9 lookalike domains registered against supplier-portal namespace.",
         grounded: false,
       },
@@ -696,12 +700,12 @@ export const ALERTS: Alert[] = [
     supplier: "Iberia Cells S.A.",
     evidence: [
       {
-        agent: "ComplianceAgent",
+        agent: "news-mcp",
         text: "Assessing officer requested transaction-value substantiation for HS 8507.",
         grounded: true,
       },
       {
-        agent: "ShipmentTelemetryAgent",
+        agent: "supplychain-mcp",
         text: "Both containers held 38h; demurrage starts in 10h.",
         grounded: false,
       },
@@ -736,7 +740,7 @@ export const ALERTS: Alert[] = [
     supplier: "Hanoi Precision Works",
     evidence: [
       {
-        agent: "GeoNewsAgent",
+        agent: "news-mcp",
         text: "Provincial advisory issued; vendor reports 6% absenteeism.",
         grounded: false,
       },
@@ -772,6 +776,10 @@ export type Decision = {
   override?: { recommended: string; chosen: string };
   /** Reviewer's free-text note. */
   note?: string;
+  /** Live data only: backend reversibility of the shown action. */
+  reversible?: boolean;
+  /** Live data only: the gate's route for this decision. */
+  route?: "auto_execute" | "human_review";
 };
 
 // Deterministic pseudo-random generator so the seeded history never shifts.
@@ -849,113 +857,3 @@ export function seedDecisionsFromAlerts(): Decision[] {
     };
   });
 }
-
-export type AgentNode = {
-  id: string;
-  name: string;
-  kind: "signal" | "llm" | "gate" | "comms";
-  role: string;
-  mcp: string;
-  trace?: { retrieved: string[]; thought: string; output: string };
-};
-
-export const PIPELINE: AgentNode[] = [
-  {
-    id: "weather",
-    name: "WeatherAgent",
-    kind: "signal",
-    role: "Polls meteorological services for severe-weather alerts along active lanes and scores transit exposure.",
-    mcp: "weather-mcp.get_severe_weather_alerts(region)",
-    trace: {
-      retrieved: [],
-      thought:
-        "Cyclone Dhruv cone intersects Bay of Bengal lane BOB-14. 5 active vessels inside cone. Landfall T-38h.",
-      output: `{"signal":"severe_weather","region":"BOB-14","severity":"high","eta_hours":38,"exposed_shipments":5}`,
-    },
-  },
-  {
-    id: "geonews",
-    name: "GeoNewsAgent",
-    kind: "signal",
-    role: "Monitors news, union notices and advisories for geopolitical, labor and health disruptions near supplier or port nodes.",
-    mcp: "news-mcp.search_disruption_news(query, window)",
-    trace: {
-      retrieved: [],
-      thought:
-        "Chennai dockworkers' union filed 72h stoppage notice. Two independent outlets corroborate. Confidence 0.89.",
-      output: `{"signal":"labor_action","node":"INMAA","start":"2026-09-19","duration_h":72,"confidence":0.89}`,
-    },
-  },
-  {
-    id: "telemetry",
-    name: "ShipmentTelemetryAgent",
-    kind: "signal",
-    role: "Streams AIS, telematics and reefer sensor data to detect deviation, dwell and cold-chain anomalies.",
-    mcp: "supplychain-mcp.get_shipment_telemetry(shipment_ids)",
-    trace: {
-      retrieved: [],
-      thought:
-        "3 containers berth inside strike window. Mundra ICD dwell up 14h -> 26h. Reefer SHP-88112 at 6.4°C.",
-      output: `{"exposed":["SHP-88213","SHP-88240","SHP-88301"],"dwell_delta_h":12,"anomalies":1}`,
-    },
-  },
-  {
-    id: "supplier",
-    name: "SupplierRiskAgent",
-    kind: "signal",
-    role: "Scores supplier financial health, OTD performance and concentration risk from scorecards and credit feeds.",
-    mcp: "supplychain-mcp.get_supplier_risk_profile(supplier_id)",
-    trace: {
-      retrieved: [],
-      thought:
-        "Anhui Precision credit 611 -> 488 in 30d, distress score 0.76 above 0.70 dual-source trigger.",
-      output: `{"supplier":"anhui-precision","distress":0.76,"otd_30d":0.71,"tier":2}`,
-    },
-  },
-  {
-    id: "synthesizer",
-    name: "SynthesizerAgent",
-    kind: "llm",
-    role: "Fuses all signal-agent outputs into a single ranked disruption with a calibrated confidence score, grounded in retrieved past incidents.",
-    mcp: "chroma-rag.query(collection='incidents+playbooks', k=6)",
-    trace: {
-      retrieved: ["past_incident_047", "logistics_playbook_weather.md", "port_node_profile_INMAA"],
-      thought:
-        "Labor signal (0.89) + telemetry exposure (3 shipments) fuse into one disruption. past_incident_047 (Chennai 2024) shows 96h realised delay for the same lane, so uplift severity to critical and set confidence 0.91.",
-      output: `{"alert_id":"ALT-1042","category":"labor","severity":"critical","confidence":0.91,"impacted_shipments":3,"rationale_refs":["past_incident_047"]}`,
-    },
-  },
-  {
-    id: "strategist",
-    name: "StrategistAgent",
-    kind: "llm",
-    role: "Generates 1-3 mitigation options with cost, delay-reduction and reversibility estimates, retrieved from playbooks and historical option outcomes.",
-    mcp: "supplychain-mcp.price_reroute(options) + chroma-rag.query(collection='playbooks')",
-    trace: {
-      retrieved: ["logistics_playbook_labor.md", "past_incident_047", "carrier_ratecard_2026Q3"],
-      thought:
-        "Krishnapatnam has berth availability and 14.2k reroute cost per ratecard; reroute is reversible up to gate-in. Air split costs 22.8k with lower coverage. Recommend reroute.",
-      output: `{"recommended":"reroute","cost_usd":14200,"delay_reduction_h":72,"reversible":true,"alternatives":["split_order","notify_only"]}`,
-    },
-  },
-  {
-    id: "gate",
-    name: "Decision Gate",
-    kind: "gate",
-    role: "Deterministic policy layer: compares cost and confidence against operator thresholds and forces human review for irreversible actions.",
-    mcp: "policy-engine.evaluate(decision, thresholds)",
-  },
-  {
-    id: "comms",
-    name: "CommunicationAgent",
-    kind: "comms",
-    role: "Drafts and dispatches stakeholder notifications for the executed or escalated decision, using tone and template guidance from the knowledge base.",
-    mcp: "notify-mcp.send_notification(channel, template, payload)",
-    trace: {
-      retrieved: ["comms_template_delay_notice.md", "customer_tier_matrix"],
-      thought:
-        "Decision escalated to human review, so send an internal ops digest now and hold the customer notice until sign-off.",
-      output: `{"channel":"slack#supply-ops","template":"escalation_digest","recipients":4,"customer_notice":"held"}`,
-    },
-  },
-];

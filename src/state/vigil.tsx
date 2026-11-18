@@ -23,7 +23,6 @@ import {
 import { ApiError, api, type ApiHealth } from "@/lib/api";
 import {
   kpisFromDemo,
-  overrideNote,
   toAlert,
   toDecisions,
   toKpis,
@@ -46,6 +45,12 @@ type VigilState = {
   thresholds: Thresholds;
   setThresholds: (t: Partial<Thresholds>) => void;
   resetThresholds: () => void;
+  /** Thresholds the backend is using now (live only). */
+  serverThresholds: Thresholds | null;
+  /** PUT /thresholds with the current slider values (live only). Affects new decisions only. */
+  applyThresholds: () => Promise<boolean>;
+  /** Re-fetch everything from the backend now. */
+  refresh: () => Promise<void>;
   approve: (alertId: string, optionId: string) => Promise<void>;
   reject: (alertId: string) => Promise<void>;
   /** Alert id currently being reviewed (request in flight). */
@@ -259,17 +264,23 @@ export function VigilProvider({ children }: { children: ReactNode }) {
         toast.error(`Alert ${alertId} not found in backend data.`);
         return;
       }
-      let note: string | null = null;
+      // Modify & Approve: send the chosen option's backend action; the backend stores that
+      // option's own action, cost, confidence and reversibility and marks it as an override.
+      let chosenAction: string | null = null;
       if (verdict === "approve" && optionId && optionId !== alert.recommendedOptionId) {
-        const rec = alert.options.find((o) => o.id === alert.recommendedOptionId);
-        const chosen = alert.options.find((o) => o.id === optionId);
-        if (rec?.backendAction && chosen?.backendAction) {
-          note = overrideNote(rec.backendAction, chosen.backendAction);
+        chosenAction = alert.options.find((o) => o.id === optionId)?.backendAction ?? null;
+        if (!chosenAction) {
+          toast.error(`Option ${optionId} not found in backend data.`);
+          return;
         }
       }
       setBusyAlertId(alertId);
       try {
-        await api.review(alert.auditSeq, { reviewer: name, verdict, note });
+        await api.review(alert.auditSeq, {
+          reviewer: name,
+          verdict,
+          ...(chosenAction ? { chosen_action: chosenAction } : {}),
+        });
         toast.success(`${alertId} ${verdict === "approve" ? "approved" : "rejected"} by ${name}`);
       } catch (e) {
         toast.error(`Review failed: ${errorText(e)}`);
@@ -287,6 +298,28 @@ export function VigilProvider({ children }: { children: ReactNode }) {
   );
   const reject = useCallback((alertId: string) => review(alertId, "reject", null), [review]);
 
+  const applyThresholds = useCallback(async () => {
+    if (!isLive) {
+      toast.error("No backend: thresholds can only be applied when the backend is running.");
+      return false;
+    }
+    try {
+      const t = await api.putThresholds({
+        cost_limit_usd: thresholds.cost,
+        confidence_min: thresholds.confidence / 100,
+      });
+      thresholdsTouched.current = false;
+      toast.success(
+        `Thresholds applied: cost ≤ ${t.cost_limit_usd}, confidence ≥ ${t.confidence_min}. New decisions only.`,
+      );
+      await sync();
+      return true;
+    } catch (e) {
+      toast.error(`Apply failed: ${errorText(e)}`);
+      return false;
+    }
+  }, [isLive, thresholds, sync]);
+
   const kpis = useMemo<DisplayKpis>(
     () => (isLive ? live.kpis : kpisFromDemo(alerts, decisions)),
     [isLive, live, alerts, decisions],
@@ -301,6 +334,9 @@ export function VigilProvider({ children }: { children: ReactNode }) {
     thresholds,
     setThresholds,
     resetThresholds,
+    serverThresholds: isLive ? live.serverThresholds : null,
+    applyThresholds,
+    refresh: sync,
     approve,
     reject,
     busyAlertId,

@@ -1,152 +1,221 @@
-import { Bot, Cpu, Database, ShieldCheck, Terminal } from "lucide-react";
-import {
-  ACTION_META,
-  IRREVERSIBLE_ACTIONS,
-  PIPELINE,
-  type ActionType,
-  type AgentNode,
-} from "@/data/vigilai";
+import { Bot, Cpu, ShieldCheck, Terminal } from "lucide-react";
 import { money } from "@/components/bits";
-import { gateVerdict } from "@/state/vigil";
+import type { NodeKind, PipelineNode } from "@/data/system";
+import type { ApiAlertView, ApiSignal } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-export function kindIcon(kind: AgentNode["kind"]) {
-  if (kind === "llm") return Bot;
+/** Real trace of one alert through the pipeline, from GET /alerts/{id}. No canned text. */
+
+export function kindIcon(kind: NodeKind) {
+  if (kind === "agent") return Bot;
   if (kind === "gate") return ShieldCheck;
   if (kind === "comms") return Terminal;
   return Cpu;
 }
 
-export function AgentDetail({
-  agent,
-  thresholds,
-  example,
-}: {
-  agent: AgentNode;
-  thresholds: { cost: number; confidence: number };
-  example: { id: string; action: ActionType; cost: number; confidence: number; summary: string };
-}) {
-  const Icon = kindIcon(agent.kind);
+const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mt-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+
+function SignalList({ signals }: { signals: ApiSignal[] }) {
+  if (!signals.length) {
+    return <p className="text-sm text-muted-foreground">No signals from this source.</p>;
+  }
+  return (
+    <ul className="space-y-2">
+      {signals.map((s, i) => (
+        <li key={i} className="rounded-lg border border-border bg-surface p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="font-mono text-primary">{s.source}</span>
+            <span className="text-muted-foreground">reliability {s.reliability}</span>
+            <span
+              className={cn(
+                "rounded-md px-1.5 py-0.5 font-semibold uppercase tracking-wide",
+                s.supports ? "bg-ok/15 text-ok" : "bg-destructive/15 text-destructive",
+              )}
+            >
+              {s.supports ? "supports" : "contradicts"}
+            </span>
+          </div>
+          <p className="mt-1">{s.summary}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function NodeDetail({ node, view }: { node: PipelineNode; view: ApiAlertView }) {
+  const Icon = kindIcon(node.kind);
+  const a = view.alert;
   return (
     <div className="panel p-5">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Icon className="h-4 w-4 text-primary" />
-        <h3 className="text-base font-semibold">{agent.name}</h3>
+        <h3 className="text-base font-semibold">{node.name}</h3>
         <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-          {agent.kind === "llm" ? "LLM agent" : agent.kind === "gate" ? "policy gate" : agent.kind}
+          {node.built ? node.kind : "planned"}
         </span>
+        <span className="ml-auto font-mono text-xs text-muted-foreground">{a.id}</span>
       </div>
-      <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{agent.role}</p>
+      <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{node.role}</p>
+      {node.built && <p className="mt-1 font-mono text-[11px] text-primary">{node.code}</p>}
 
-      <div className="mt-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          MCP tool call
-        </p>
-        <code className="mt-1 block overflow-x-auto rounded-lg bg-surface px-3 py-2 font-mono text-xs text-primary">
-          {agent.mcp}
-        </code>
-      </div>
-
-      {agent.trace && (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          <div className="rounded-lg border border-border bg-surface p-3">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <Database className="h-3.5 w-3.5" /> Reasoning trace
-            </p>
-            {agent.trace.retrieved.length > 0 && (
-              <p className="mt-2 font-mono text-[11px] text-primary">
-                Retrieved from: {agent.trace.retrieved.join(", ")}
-              </p>
-            )}
-            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {agent.trace.thought}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-surface p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Structured output
-            </p>
-            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] text-foreground/85">
-              {agent.trace.output}
-            </pre>
-          </div>
-        </div>
+      {node.kind === "signal" && (
+        <Section title={`Signals returned by ${node.name}`}>
+          <SignalList signals={a.signals.filter((s) => s.source === node.id)} />
+        </Section>
       )}
 
-      {agent.kind === "gate" && (
-        <GateDetail thresholds={thresholds} example={example} />
+      {node.id === "synthesizer" && (
+        <>
+          <Section title="Output alert">
+            <div className="grid gap-2 font-mono text-xs sm:grid-cols-4">
+              <div className="rounded-md bg-surface-2 p-2">category = {a.category}</div>
+              <div className="rounded-md bg-surface-2 p-2">severity = {a.severity}</div>
+              <div className="rounded-md bg-surface-2 p-2">confidence = {a.confidence}</div>
+              <div className="rounded-md bg-surface-2 p-2">grounded = {String(a.grounded)}</div>
+            </div>
+          </Section>
+          <Section title={`Input signals (${a.signals.length})`}>
+            <SignalList signals={a.signals} />
+          </Section>
+          <Section title={`Retrieved evidence (${a.evidence.length}, TF-IDF score)`}>
+            {a.evidence.length ? (
+              <ul className="space-y-2">
+                {a.evidence.map((e) => (
+                  <li
+                    key={e.doc_id}
+                    className="rounded-lg border border-border bg-surface p-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-mono text-primary">{e.doc_id}</span>
+                      <span className="rounded bg-surface-2 px-1.5 py-0.5">{e.kind}</span>
+                      <span className="ml-auto font-mono">score {e.score}</span>
+                    </div>
+                    <p className="mt-1 font-medium">{e.title}</p>
+                    <p className="mt-0.5 text-muted-foreground">{e.snippet}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No documents retrieved.</p>
+            )}
+          </Section>
+        </>
+      )}
+
+      {node.id === "strategist" && (
+        <Section title={`Proposed options (${view.options.length}, ranked)`}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="py-2 pr-2">#</th>
+                  <th>Action</th>
+                  <th>Cost</th>
+                  <th>Delay</th>
+                  <th>Conf.</th>
+                  <th>Reversible</th>
+                  <th className="pr-2">Source docs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.options.map((o, i) => {
+                  const rec = o.action === view.chosen.action;
+                  return (
+                    <tr
+                      key={o.action}
+                      className={cn("border-b border-border/60", rec && "bg-primary/5")}
+                    >
+                      <td className="py-2 pr-2 font-mono text-xs">{i + 1}</td>
+                      <td>
+                        <span className="font-mono text-xs">{o.action}</span>
+                        {rec && (
+                          <span className="ml-1 rounded bg-primary/15 px-1 text-[10px] font-semibold uppercase text-primary">
+                            recommended
+                          </span>
+                        )}
+                        <p className="text-xs text-muted-foreground">{o.description}</p>
+                      </td>
+                      <td className="font-mono">{money(o.cost_usd)}</td>
+                      <td className="font-mono">{o.delay_hours}h</td>
+                      <td className="font-mono">{o.confidence}</td>
+                      <td className={o.reversible ? "text-ok" : "text-destructive"}>
+                        {o.reversible ? "yes" : "no"}
+                      </td>
+                      <td className="pr-2 font-mono text-[11px]">
+                        {o.source_docs.length ? o.source_docs.join(", ") : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
+      {node.id === "gate" && <GateTrace view={view} />}
+
+      {node.kind === "comms" && (
+        <Section title="Status">
+          <p className="text-sm text-muted-foreground">
+            Not built. For this alert the backend recorded status{" "}
+            <span className="font-mono text-foreground">{view.status}</span> in the audit log (seq{" "}
+            {view.audit_seq}); no message was sent.
+          </p>
+        </Section>
       )}
     </div>
   );
 }
 
-export function GateDetail({
-  thresholds,
-  example,
-}: {
-  thresholds: { cost: number; confidence: number };
-  example: { id: string; action: ActionType; cost: number; confidence: number; summary: string };
-}) {
-  const v = gateVerdict(example.cost, example.confidence, example.action, thresholds);
-  const steps = [
+function GateTrace({ view }: { view: ApiAlertView }) {
+  const c = view.chosen;
+  const t = view.decision.thresholds;
+  const auto = view.decision.route === "auto_execute";
+  const checks = [
     {
-      label: "1 · Cost check",
-      detail: `${money(example.cost)} vs threshold ${money(thresholds.cost)}`,
-      pass: v.costOk,
+      label: "Cost",
+      detail: `${money(c.cost_usd)} ≤ ${money(t.cost_limit_usd)}`,
+      pass: c.cost_usd <= t.cost_limit_usd,
     },
     {
-      label: "2 · Confidence check",
-      detail: `${example.confidence}% vs threshold ${thresholds.confidence}%`,
-      pass: v.confOk,
+      label: "Confidence",
+      detail: `${c.confidence} ≥ ${t.confidence_min}`,
+      pass: c.confidence >= t.confidence_min,
     },
     {
-      label: "3 · Reversibility override",
-      detail: v.irreversible
-        ? `${v.label} is irreversible → force escalation`
-        : `${v.label} is reversible → no override`,
-      pass: !v.irreversible,
+      label: "Reversible",
+      detail: c.reversible ? `${c.action} is reversible` : `${c.action} is irreversible`,
+      pass: c.reversible || !t.require_reversible,
     },
   ];
-
   return (
     <div className="mt-4 grid gap-3 lg:grid-cols-2">
       <div className="rounded-lg border border-border bg-surface p-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Current thresholds
+          Thresholds used (snapshot at decision time)
         </p>
-        <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-xs">
+        <div className="mt-2 grid grid-cols-3 gap-2 font-mono text-xs">
+          <div className="rounded-md bg-surface-2 p-2">cost_limit_usd = {t.cost_limit_usd}</div>
+          <div className="rounded-md bg-surface-2 p-2">confidence_min = {t.confidence_min}</div>
           <div className="rounded-md bg-surface-2 p-2">
-            cost_max = {money(thresholds.cost)}
-          </div>
-          <div className="rounded-md bg-surface-2 p-2">
-            confidence_min = {thresholds.confidence}%
+            require_reversible = {String(t.require_reversible)}
           </div>
         </div>
         <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Reversibility lookup table
+          Checks on the recommended option ({c.action})
         </p>
-        <ul className="mt-2 grid grid-cols-2 gap-1 font-mono text-[11px]">
-          {(Object.keys(ACTION_META) as ActionType[]).map((a) => (
-            <li
-              key={a}
-              className={
-                IRREVERSIBLE_ACTIONS.includes(a)
-                  ? "rounded bg-destructive/12 px-1.5 py-1 text-destructive"
-                  : "rounded bg-ok/12 px-1.5 py-1 text-ok"
-              }
-            >
-              {a}: {IRREVERSIBLE_ACTIONS.includes(a) ? "false" : "true"}
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="rounded-lg border border-border bg-surface p-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Worked example · {example.id}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{example.summary}</p>
-        <ul className="mt-3 space-y-2">
-          {steps.map((s) => (
+        <ul className="mt-2 space-y-1.5">
+          {checks.map((s) => (
             <li key={s.label} className="flex items-start gap-2 text-xs">
               <span
                 className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
@@ -159,55 +228,26 @@ export function GateDetail({
             </li>
           ))}
         </ul>
+      </div>
+      <div className="rounded-lg border border-border bg-surface p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Gate reasons (from backend)
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs">
+          {view.decision.reasons.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
         <p
           className="mt-3 rounded-md px-3 py-2 text-xs font-semibold"
           style={{
-            color: v.auto ? "var(--ok)" : "var(--warn)",
-            backgroundColor: `color-mix(in oklab, ${v.auto ? "var(--ok)" : "var(--warn)"} 14%, transparent)`,
+            color: auto ? "var(--ok)" : "var(--warn)",
+            backgroundColor: `color-mix(in oklab, ${auto ? "var(--ok)" : "var(--warn)"} 14%, transparent)`,
           }}
         >
-          Final verdict: {v.auto ? "AUTO-EXECUTE" : "ESCALATE TO HUMAN"}
+          Route: {auto ? "AUTO-EXECUTE (simulated)" : "HUMAN REVIEW"} · status {view.status}
         </p>
       </div>
-    </div>
-  );
-}
-
-export function DecisionTrace({
-  decisionId,
-  action,
-  cost,
-  confidence,
-  summary,
-  thresholds,
-}: {
-  decisionId: string;
-  action: ActionType;
-  cost: number;
-  confidence: number;
-  summary: string;
-  thresholds: { cost: number; confidence: number };
-}) {
-  const synth = PIPELINE.find((p) => p.id === "synthesizer")!;
-  const strat = PIPELINE.find((p) => p.id === "strategist")!;
-  return (
-    <div className="space-y-3">
-      {[synth, strat].map((a) => (
-        <div key={a.id} className="rounded-lg border border-border bg-surface p-3">
-          <p className="flex items-center gap-1.5 text-xs font-semibold">
-            <Bot className="h-3.5 w-3.5 text-primary" />
-            {a.name}
-          </p>
-          <p className="mt-1 font-mono text-[11px] text-primary">
-            Retrieved from: {a.trace!.retrieved.join(", ")}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">{a.trace!.thought}</p>
-        </div>
-      ))}
-      <GateDetail
-        thresholds={thresholds}
-        example={{ id: decisionId, action, cost, confidence, summary }}
-      />
     </div>
   );
 }

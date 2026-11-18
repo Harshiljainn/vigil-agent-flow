@@ -1,92 +1,274 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useMemo, useState } from "react";
 import { CategoryBadge, PageHeading, money } from "@/components/bits";
-import { ACTION_META, CATEGORY_META, type Category } from "@/data/vigilai";
+import { ACTION_META, CATEGORY_META, type Category, type Decision } from "@/data/vigilai";
+import { sortDecisions, type AuditSortKey } from "@/lib/adapter";
 import { useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/audit")({
   head: () => ({
     meta: [
       { title: "Audit Log — VigilAI" },
-      { name: "description", content: "Every agent and human decision, with cost, confidence, approver and outcome." },
+      {
+        name: "description",
+        content: "Every agent and human decision, with cost, confidence, approver and outcome.",
+      },
       { property: "og:title", content: "Audit Log — VigilAI" },
-      { property: "og:description", content: "Full traceable history of automated and human-approved decisions." },
+      {
+        property: "og:description",
+        content: "Full traceable history of automated and human-approved decisions.",
+      },
     ],
   }),
   component: Audit,
 });
 
+type Status = Decision["status"];
+const STATUSES: { value: Status; label: string }[] = [
+  { value: "auto_executed", label: "Auto executed" },
+  { value: "pending", label: "Pending review" },
+  { value: "approved", label: "Approved" },
+  { value: "rejected", label: "Rejected" },
+];
+
+const COLUMNS: { key: AuditSortKey | null; label: string; className?: string }[] = [
+  { key: "id", label: "Decision", className: "p-3" },
+  { key: null, label: "Time" },
+  { key: "category", label: "Category" },
+  { key: "action", label: "Action" },
+  { key: "route", label: "Route" },
+  { key: "human", label: "Decided by" },
+  { key: "cost", label: "Cost" },
+  { key: "confidence", label: "Conf." },
+  { key: "status", label: "Status" },
+  { key: null, label: "Outcome", className: "pr-3" },
+];
+
 function Audit() {
   const { decisions } = useVigil();
   const [cat, setCat] = useState<Category | "all">("all");
-  const [mode, setMode] = useState<"all" | "auto" | "human">("all");
+  const [route, setRoute] = useState<"all" | "auto" | "human">("all");
+  const [status, setStatus] = useState<Status | "all">("all");
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ key: AuditSortKey; dir: "asc" | "desc" } | null>(null);
 
-  const rows = useMemo(
-    () =>
-      decisions
-        .filter((d) => (cat === "all" || d.category === cat) && (mode === "all" || d.mode === mode))
-        .filter((d) => !q || `${d.id} ${d.alertId} ${d.human ?? ""} ${d.backendAction ?? ""}`.toLowerCase().includes(q.toLowerCase()))
-        .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
-    [decisions, cat, mode, q],
-  );
+  const rows = useMemo(() => {
+    const filtered = decisions
+      .filter(
+        (d) =>
+          (cat === "all" || d.category === cat) &&
+          (route === "all" || d.mode === route) &&
+          (status === "all" || d.status === status),
+      )
+      .filter(
+        (d) =>
+          !q ||
+          `${d.id} ${d.alertId} ${d.human ?? ""} ${d.backendAction ?? ""}`
+            .toLowerCase()
+            .includes(q.toLowerCase()),
+      );
+    // Default order: newest first (demo rows by timestamp; live rows have no timestamp yet
+    // and already arrive newest first).
+    const base = [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return sort ? sortDecisions(base, sort.key, sort.dir) : base;
+  }, [decisions, cat, route, status, q, sort]);
+
+  const toggleSort = (key: AuditSortKey) =>
+    setSort((s) =>
+      s?.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null,
+    );
 
   const exportCsv = () => {
-    const head = "id,alert,time,category,action,backend_action,override_of,mode,human,cost,confidence,status,outcome";
-    const body = rows.map((d) => [d.id, d.alertId, d.timestamp, d.category, d.action, d.backendAction ?? "", d.override?.recommended ?? "", d.mode, d.human ?? "", d.cost, d.confidence, d.status, d.outcome].join(","));
+    const head =
+      "id,alert,time,category,action,backend_action,override_of,route,human,cost,confidence,status,outcome";
+    const body = rows.map((d) =>
+      [
+        d.id,
+        d.alertId,
+        d.timestamp,
+        d.category,
+        d.action,
+        d.backendAction ?? "",
+        d.override?.recommended ?? "",
+        d.mode,
+        d.human ?? "",
+        d.cost,
+        d.confidence,
+        d.status,
+        d.outcome,
+      ].join(","),
+    );
     const url = URL.createObjectURL(new Blob([[head, ...body].join("\n")], { type: "text/csv" }));
     const a = document.createElement("a");
-    a.href = url; a.download = "vigilai-audit.csv"; a.click();
+    a.href = url;
+    a.download = "vigilai-audit.csv";
+    a.click();
     URL.revokeObjectURL(url);
   };
 
   const sel = "rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm";
+  const filtered = cat !== "all" || route !== "all" || status !== "all" || q !== "";
   return (
     <div>
       <PageHeading
         title="Audit Log"
         subtitle={`${rows.length} of ${decisions.length} decisions · immutable record of every agent and human action`}
-        actions={<button onClick={exportCsv} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground">Export CSV</button>}
+        actions={
+          <button
+            onClick={exportCsv}
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+          >
+            Export CSV
+          </button>
+        }
       />
       <div className="mb-4 flex flex-wrap gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ID or approver…" className={sel} />
-        <select value={cat} onChange={(e) => setCat(e.target.value as Category | "all")} className={sel}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search ID, action or approver…"
+          className={sel}
+        />
+        <select
+          value={cat}
+          onChange={(e) => setCat(e.target.value as Category | "all")}
+          className={sel}
+          aria-label="Category filter"
+        >
           <option value="all">All categories</option>
-          {(Object.keys(CATEGORY_META) as Category[]).map((c) => <option key={c} value={c}>{CATEGORY_META[c].label}</option>)}
+          {(Object.keys(CATEGORY_META) as Category[]).map((c) => (
+            <option key={c} value={c}>
+              {CATEGORY_META[c].label}
+            </option>
+          ))}
         </select>
-        <select value={mode} onChange={(e) => setMode(e.target.value as "all")} className={sel}>
-          <option value="all">Auto + Human</option><option value="auto">Auto only</option><option value="human">Human only</option>
+        <select
+          value={route}
+          onChange={(e) => setRoute(e.target.value as "all" | "auto" | "human")}
+          className={sel}
+          aria-label="Route filter"
+        >
+          <option value="all">All routes</option>
+          <option value="auto">Auto-execute</option>
+          <option value="human">Human review</option>
         </select>
+        <select
+          value={status}
+          onChange={(e) => setStatus(e.target.value as Status | "all")}
+          className={sel}
+          aria-label="Status filter"
+        >
+          <option value="all">All statuses</option>
+          {STATUSES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        {(filtered || sort) && (
+          <button
+            onClick={() => {
+              setCat("all");
+              setRoute("all");
+              setStatus("all");
+              setQ("");
+              setSort(null);
+            }}
+            className="rounded-lg border border-border px-2.5 py-1.5 text-sm hover:bg-surface-2"
+          >
+            Clear
+          </button>
+        )}
       </div>
       <div className="panel overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase text-muted-foreground">
             <tr className="border-b border-border">
-              <th className="p-3">Decision</th><th>Time</th><th>Category</th><th>Action</th><th>Decided by</th><th>Cost</th><th>Conf.</th><th>Status</th><th className="pr-3">Outcome</th>
+              {COLUMNS.map((c) => (
+                <th
+                  key={c.label}
+                  className={c.className}
+                  aria-sort={
+                    c.key && sort?.key === c.key
+                      ? sort.dir === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : undefined
+                  }
+                >
+                  {c.key ? (
+                    <button
+                      onClick={() => toggleSort(c.key!)}
+                      className="inline-flex items-center gap-1 uppercase hover:text-foreground"
+                    >
+                      {c.label}
+                      {sort?.key === c.key ? (
+                        sort.dir === "asc" ? (
+                          <ArrowUp className="h-3 w-3" />
+                        ) : (
+                          <ArrowDown className="h-3 w-3" />
+                        )
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      )}
+                    </button>
+                  ) : (
+                    c.label
+                  )}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((d) => (
               <tr key={d.id} className="border-b border-border/60 hover:bg-surface-2/50">
-                <td className="p-3 font-mono text-xs">{d.id}<div className="text-muted-foreground">{d.alertId}</div></td>
-                <td className="font-mono text-xs text-muted-foreground">{d.timestamp ? d.timestamp.slice(0, 16).replace("T", " ") : "—"}</td>
-                <td><CategoryBadge category={d.category} /></td>
+                <td className="p-3 font-mono text-xs">
+                  {d.id}
+                  <div className="text-muted-foreground">{d.alertId}</div>
+                </td>
+                <td className="font-mono text-xs text-muted-foreground">
+                  {d.timestamp ? d.timestamp.slice(0, 16).replace("T", " ") : "—"}
+                </td>
+                <td>
+                  <CategoryBadge category={d.category} />
+                </td>
                 <td>
                   {ACTION_META[d.action].label}
-                  {d.backendAction && <div className="font-mono text-xs text-muted-foreground">{d.backendAction}</div>}
+                  {d.backendAction && (
+                    <div className="font-mono text-xs text-muted-foreground">{d.backendAction}</div>
+                  )}
                   {d.override && (
                     <div className="text-xs text-warn" title={d.note}>
                       Override: recommended {d.override.recommended}
                     </div>
                   )}
                 </td>
-                <td>{d.mode === "auto" ? <span className="text-primary">Agent (auto)</span> : (d.human ?? "—")}</td>
+                <td className="text-xs">{d.mode === "auto" ? "Auto" : "Human review"}</td>
+                <td>
+                  {d.mode === "auto" ? (
+                    <span className="text-primary">Agent (auto)</span>
+                  ) : (
+                    (d.human ?? "—")
+                  )}
+                </td>
                 <td className="font-mono">{money(d.cost)}</td>
                 <td className="font-mono">{d.confidence}%</td>
                 <td className="capitalize">{d.status.replace("_", " ")}</td>
-                <td className={`pr-3 capitalize ${d.outcome === "correct" ? "text-ok" : d.outcome === "incorrect" ? "text-destructive" : "text-muted-foreground"}`}>{d.outcome}</td>
+                <td
+                  className={`pr-3 capitalize ${d.outcome === "correct" ? "text-ok" : d.outcome === "incorrect" ? "text-destructive" : "text-muted-foreground"}`}
+                >
+                  {d.outcome}
+                </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={COLUMNS.length} className="p-6 text-center text-muted-foreground">
+                  No decisions match these filters.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

@@ -102,6 +102,10 @@ export type ApiAuditRecord = {
   evidence_ids: string[];
   review_of: number | null;
   note: string | null;
+  /** True when the reviewer approved a non-recommended option ("Modify & Approve"). */
+  override: boolean;
+  /** The gate's recommended action; set on override records only. */
+  recommended_action: string | null;
 };
 
 export type ApiHealth = {
@@ -118,6 +122,8 @@ export type ApiReviewIn = {
   reviewer: string;
   verdict: "approve" | "reject";
   note?: string | null;
+  /** Modify & Approve: backend action name of the option the reviewer picked. */
+  chosen_action?: string | null;
 };
 
 export type ApiFlip = {
@@ -149,8 +155,46 @@ export type ApiKpis = {
   reviews_done: number;
 };
 
-/** results/summary.json is passed through unchanged; its shape is owned by evaluate.py. */
-export type ApiEvaluation = Record<string, unknown>;
+/** One metrics block from backend/vigilai/evaluate.py metrics(). All rates are 0-1. */
+export type ApiEvalMetrics = {
+  n: number;
+  decision_accuracy: number;
+  automation_rate: number;
+  human_review_workload: number;
+  false_auto_execution_rate: number;
+  false_auto_among_auto: number;
+  unnecessary_escalation_rate: number;
+};
+
+export type ApiSweepPoint = {
+  confidence_min: number;
+  gate: ApiEvalMetrics;
+  confidence_only: ApiEvalMetrics;
+};
+
+/** Per-category subset of the metrics (evaluate.py by_category()). */
+export type ApiCategoryMetrics = Pick<
+  ApiEvalMetrics,
+  "n" | "decision_accuracy" | "automation_rate" | "false_auto_execution_rate"
+>;
+
+export type ApiCategoryBreakdown = Partial<
+  Record<ApiCategory, { gate: ApiCategoryMetrics; confidence_only: ApiCategoryMetrics }>
+>;
+
+/** results/summary.json, passed through unchanged by GET /evaluation. */
+export type ApiEvaluation = {
+  summary: {
+    note: string;
+    gate: ApiEvalMetrics;
+    confidence_only_baseline: ApiEvalMetrics;
+    pipeline_action_accuracy: number;
+    all_options_stress_test: { gate: ApiEvalMetrics; confidence_only_baseline: ApiEvalMetrics };
+  };
+  sweep_top1: ApiSweepPoint[];
+  sweep_all_options: ApiSweepPoint[];
+  by_category?: { top1: ApiCategoryBreakdown; all_options: ApiCategoryBreakdown };
+};
 
 export type AuditFilter = { category?: ApiCategory; route?: ApiRoute; status?: string };
 

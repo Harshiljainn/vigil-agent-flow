@@ -7,8 +7,11 @@ import type {
   ApiAlertView,
   ApiAuditRecord,
   ApiCategory,
+  ApiEvalMetrics,
+  ApiEvaluation,
   ApiKpis,
   ApiMitigationOption,
+  ApiSweepPoint,
   ApiThresholds,
 } from "./api";
 import type {
@@ -102,20 +105,6 @@ export function toStatus(s: string): Status {
   return "pending";
 }
 
-// ---------- reviewer override ("Modify & Approve") ----------
-
-/** The backend review has no option field, so an override is recorded in the note. */
-export function overrideNote(recommended: string, chosen: string): string {
-  return `override: approved ${chosen} instead of recommended ${recommended}`;
-}
-
-export function parseOverride(
-  note: string | null | undefined,
-): { recommended: string; chosen: string } | null {
-  const m = note?.match(/^override: approved (\S+) instead of recommended (\S+)/);
-  return m ? { chosen: m[1]!, recommended: m[2]! } : null;
-}
-
 // ---------- alerts ----------
 
 function capitalize(s: string): string {
@@ -134,6 +123,7 @@ export function toOption(alertId: string, o: ApiMitigationOption, i: number): Mi
     reversible: o.reversible,
     delayHours: o.delay_hours,
     confidence: toPct(o.confidence),
+    confidenceExact: o.confidence,
   };
 }
 
@@ -172,6 +162,7 @@ export function toAlert(v: ApiAlertView): Alert {
     recommendedOptionId: options[chosenIdx >= 0 ? chosenIdx : 0]?.id ?? "",
     auditSeq: v.audit_seq,
     gateReasons: v.decision.reasons,
+    route: v.decision.route,
   };
 }
 
@@ -180,7 +171,8 @@ export function toAlert(v: ApiAlertView): Alert {
 /**
  * One Decision per gate record. A human review is a separate backend audit row
  * (review_of = gate seq); it is merged into its gate row here: approver = reviewer,
- * status = verdict, and an override recorded in the note becomes `override`.
+ * status = verdict. On an override ("Modify & Approve") the review record carries the
+ * chosen option's own action, cost, confidence and reversibility, so those are shown.
  */
 export function toDecisions(audit: ApiAuditRecord[]): Decision[] {
   const reviews = new Map<number, ApiAuditRecord>();
@@ -191,8 +183,8 @@ export function toDecisions(audit: ApiAuditRecord[]): Decision[] {
     .sort((a, b) => b.seq - a.seq)
     .map((g) => {
       const review = reviews.get(g.seq);
-      const override = parseOverride(review?.note);
-      const backendAction = override?.chosen ?? g.action;
+      const shown = review?.override ? review : g;
+      const backendAction = shown.action;
       const d: Decision = {
         id: `DEC-${String(g.seq).padStart(4, "0")}`,
         alertId: g.alert_id,
@@ -201,13 +193,17 @@ export function toDecisions(audit: ApiAuditRecord[]): Decision[] {
         action: toActionType(backendAction),
         mode: g.route === "auto_execute" ? "auto" : "human",
         human: review ? review.actor : null,
-        cost: g.cost_usd,
-        confidence: toPct(g.confidence),
+        cost: shown.cost_usd,
+        confidence: toPct(shown.confidence),
         status: toStatus(review ? review.status : g.status),
         outcome: "pending", // no per-decision ground truth from the API
         backendAction,
       };
-      if (override) d.override = override;
+      d.reversible = shown.reversible;
+      d.route = g.route;
+      if (review?.override) {
+        d.override = { recommended: review.recommended_action ?? g.action, chosen: review.action };
+      }
       if (review?.note) d.note = review.note;
       return d;
     });
@@ -255,4 +251,101 @@ export function kpisFromDemo(alerts: Alert[], decisions: Decision[]): DisplayKpi
     escalatedPct: decisions.length ? 100 - autoPct : 0,
     hoursSaved: null,
   };
+}
+
+// ---------- evaluation (GET /evaluation = results/summary.json) ----------
+
+/** True when the payload has the summary.json shape the Evaluation page needs. */
+export function isEvaluation(x: unknown): x is ApiEvaluation {
+  const e = x as ApiEvaluation | null;
+  return (
+    !!e &&
+    typeof e === "object" &&
+    !!e.summary?.gate &&
+    !!e.summary?.confidence_only_baseline &&
+    !!e.summary?.all_options_stress_test?.gate &&
+    Array.isArray(e.sweep_top1) &&
+    Array.isArray(e.sweep_all_options)
+  );
+}
+
+/** Rate 0-1 -> percent with one decimal (display only). */
+export function pct1(x: number): number {
+  return Math.round(x * 1000) / 10;
+}
+
+export type ParetoPoint = {
+  threshold: number;
+  /** % of decisions auto-executed */
+  automation: number;
+  /** % of decisions wrongly auto-executed */
+  falseAuto: number;
+};
+
+/** Sweep -> chart points per policy: x = false auto-execution %, y = automation %. */
+export function paretoSeries(sweep: ApiSweepPoint[]): {
+  gate: ParetoPoint[];
+  baseline: ParetoPoint[];
+} {
+  const pt = (threshold: number, m: ApiEvalMetrics): ParetoPoint => ({
+    threshold,
+    automation: pct1(m.automation_rate),
+    falseAuto: pct1(m.false_auto_execution_rate),
+  });
+  return {
+    gate: sweep.map((p) => pt(p.confidence_min, p.gate)),
+    baseline: sweep.map((p) => pt(p.confidence_min, p.confidence_only)),
+  };
+}
+
+/** The sweep point evaluated at exactly this confidence threshold (0-1), if there is one. */
+export function sweepPointAt(sweep: ApiSweepPoint[], confidenceMin: number): ApiSweepPoint | null {
+  return sweep.find((p) => Math.abs(p.confidence_min - confidenceMin) < 1e-9) ?? null;
+}
+
+// ---------- audit log sorting ----------
+
+export type AuditSortKey =
+  "id" | "category" | "action" | "route" | "human" | "cost" | "confidence" | "status";
+
+/** Stable sort of display decisions by one column. Missing values sort last. */
+export function sortDecisions(
+  rows: Decision[],
+  key: AuditSortKey,
+  dir: "asc" | "desc",
+): Decision[] {
+  const val = (d: Decision): string | number | null => {
+    switch (key) {
+      case "id":
+        return d.id;
+      case "category":
+        return d.category;
+      case "action":
+        return d.backendAction ?? d.action;
+      case "route":
+        return d.mode;
+      case "human":
+        return d.mode === "auto" ? "" : d.human;
+      case "cost":
+        return d.cost;
+      case "confidence":
+        return d.confidence;
+      case "status":
+        return d.status;
+    }
+  };
+  const sign = dir === "asc" ? 1 : -1;
+  return rows
+    .map((d, i) => ({ d, i, v: val(d) }))
+    .sort((a, b) => {
+      if (a.v === null && b.v === null) return a.i - b.i;
+      if (a.v === null) return 1;
+      if (b.v === null) return -1;
+      const c =
+        typeof a.v === "number" && typeof b.v === "number"
+          ? a.v - b.v
+          : String(a.v).localeCompare(String(b.v));
+      return c !== 0 ? sign * c : a.i - b.i;
+    })
+    .map((x) => x.d);
 }

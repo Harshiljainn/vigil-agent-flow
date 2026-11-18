@@ -67,7 +67,7 @@ function Overview() {
     <div>
       <PageHeading
         title="Command Center"
-        subtitle="Real-time posture across 8 disruption categories, 7 agents and the human decision gate."
+        subtitle="Real-time posture across 8 disruption categories, 3 tool servers, 2 rule-based agents and the human decision gate."
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
