@@ -9,8 +9,12 @@ import type {
   ApiCategory,
   ApiEvalMetrics,
   ApiEvaluation,
+  ApiHealth,
   ApiKpis,
   ApiMitigationOption,
+  ApiRetrievalBlock,
+  ApiRetrievalComparison,
+  ApiRetrieverName,
   ApiSweepPoint,
   ApiThresholds,
 } from "./api";
@@ -287,6 +291,32 @@ export function isEvaluation(x: unknown): x is ApiEvaluation {
     Array.isArray(e.sweep_top1) &&
     Array.isArray(e.sweep_all_options)
   );
+}
+
+export const RETRIEVERS: ApiRetrieverName[] = ["tfidf", "chroma", "hybrid"];
+
+export function isRetrievalComparison(x: unknown): x is ApiRetrievalComparison {
+  const r = x as ApiRetrievalComparison | null;
+  const ok = (b: ApiRetrievalBlock | undefined) =>
+    !!b && !!b.random_baseline && RETRIEVERS.every((k) => typeof b[k]?.mrr === "number");
+  return !!r && typeof r === "object" && ok(r.with_category_filter) && ok(r.without_filter);
+}
+
+/** One chart row per metric on a 0-100 scale: hit@k in percent, MRR x100 (labelled so). */
+export function retrievalRows(block: ApiRetrievalBlock) {
+  return (["hit@1", "hit@3", "mrr"] as const).map((m) => ({
+    metric: m === "mrr" ? "MRR ×100" : m,
+    tfidf: pct1(block.tfidf[m]),
+    chroma: pct1(block.chroma[m]),
+    hybrid: pct1(block.hybrid[m]),
+    random: pct1(block.random_baseline[m]),
+  }));
+}
+
+/** "hybrid · corpus v2 (56 docs)" from /health; null when the backend does not report it. */
+export function retrievalLabel(h: ApiHealth | null): string | null {
+  if (!h?.retriever || !h.corpus) return null;
+  return `${h.retriever} · corpus ${h.corpus}${h.corpus_docs ? ` (${h.corpus_docs} docs)` : ""}`;
 }
 
 /** Rate 0-1 -> percent with one decimal (display only). */

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Bot, Database, Radio, Send, ShieldCheck, UserCheck } from "lucide-react";
 import { PageHeading } from "@/components/bits";
 import { BUILT, PIPELINE_NODES, PLANNED, TOOL_SERVERS, TOOL_SERVER_ROLE } from "@/data/system";
+import { retrievalLabel } from "@/lib/adapter";
 import { cn } from "@/lib/utils";
 import { useVigil } from "@/state/vigil";
 
@@ -12,7 +13,7 @@ export const Route = createFileRoute("/architecture")({
       {
         name: "description",
         content:
-          "What VigilAI is built from today — tool servers, Synthesizer and Strategist agents (Gemini or rule-based), TF-IDF retrieval, a deterministic Decision Gate — and what is planned.",
+          "What VigilAI is built from today — tool servers, Synthesizer and Strategist agents (Gemini or rule-based), TF-IDF / ChromaDB / hybrid retrieval, a deterministic Decision Gate — and what is planned.",
       },
       { property: "og:title", content: "System Architecture — VigilAI" },
       {
@@ -35,7 +36,7 @@ const LAYERS = [
     icon: Database,
     title: "2. Retrieval (RAG)",
     status: "built",
-    body: "TF-IDF search over 16 hand-written playbooks and incident notes grounds each alert. A vector store (ChromaDB) is planned.",
+    body: "The top 3 same-category documents ground each alert. Retriever: TF-IDF (default), ChromaDB vector search with a local all-MiniLM-L6-v2 model, or a hybrid (average of both scores). Knowledge base: v1 (16 docs) or v2 (56 docs), all hand-written for the project.",
   },
   {
     icon: Bot,
@@ -85,6 +86,7 @@ function Tag({ status }: { status: string }) {
 function Architecture() {
   const { mode, health } = useVigil();
   const servers = health?.tool_servers ?? [...TOOL_SERVERS];
+  const retrieval = mode === "live" ? retrievalLabel(health) : null;
   return (
     <div>
       <PageHeading
@@ -189,10 +191,30 @@ function Architecture() {
               )}
             </div>
           ))}
+          <p className="mb-2 mt-5 text-sm font-medium">Retrieval</p>
+          <div className="py-1.5 text-sm">
+            <div className="flex items-center gap-2">
+              <span
+                className={cn("h-2 w-2 rounded-full", retrieval ? "bg-ok" : "bg-muted-foreground")}
+              />
+              <span className="font-mono">{retrieval ?? "unknown"}</span>
+              <span className="ml-auto text-xs text-muted-foreground">
+                {mode !== "live"
+                  ? "backend offline"
+                  : retrieval
+                    ? "active · reported by /health"
+                    : "not reported by /health"}
+              </span>
+            </div>
+            <p className="ml-4 text-xs text-muted-foreground">
+              Set with VIGIL_RETRIEVER (tfidf | chroma | hybrid) and VIGIL_CORPUS (v1 | v2).
+            </p>
+          </div>
           <p className="mb-2 mt-5 text-sm font-medium">Stack</p>
           <p className="text-sm text-muted-foreground">
             Frontend: React + TanStack Start, Tailwind, Recharts. Backend: Python, FastAPI,
-            pydantic, scikit-learn TF-IDF. State is in memory until the database stage.
+            pydantic, scikit-learn TF-IDF, ChromaDB (local, ONNX embeddings). State is in memory
+            until the database stage.
           </p>
         </div>
       </div>

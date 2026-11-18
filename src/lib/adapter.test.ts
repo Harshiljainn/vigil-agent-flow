@@ -5,6 +5,9 @@ import { join } from "node:path";
 import {
   ACTION_TYPE_BY_BACKEND,
   isEvaluation,
+  isRetrievalComparison,
+  retrievalLabel,
+  retrievalRows,
   kpisFromDemo,
   paretoSeries,
   reasoningLabel,
@@ -20,7 +23,13 @@ import {
   toStatus,
   toThresholds,
 } from "./adapter";
-import type { ApiAlertView, ApiAuditRecord, ApiEvaluation, ApiKpis } from "./api";
+import type {
+  ApiAlertView,
+  ApiAuditRecord,
+  ApiEvaluation,
+  ApiKpis,
+  ApiRetrievalComparison,
+} from "./api";
 import type { Decision } from "../data/vigilai";
 
 const TH = { cost_limit_usd: 12000, confidence_min: 0.78, require_reversible: true };
@@ -335,6 +344,41 @@ describe("evaluation (summary.json)", () => {
     expect(sweepPointAt(e.sweep_top1, 0.78)?.gate).toEqual(e.summary.gate);
     const top1 = Object.values(e.by_category!.top1);
     expect(top1.reduce((n, c) => n + c.gate.n, 0)).toBe(e.summary.gate.n);
+  });
+});
+
+describe("retrieval (Stage 5)", () => {
+  test("health label shows retriever and corpus, null when not reported", () => {
+    expect(
+      retrievalLabel({
+        status: "ok",
+        alerts: 0,
+        escalated: 0,
+        auto_executed: 0,
+        tool_servers: [],
+        retriever: "hybrid",
+        corpus: "v2",
+        corpus_docs: 56,
+      }),
+    ).toBe("hybrid · corpus v2 (56 docs)");
+    expect(retrievalLabel(null)).toBeNull();
+    expect(
+      retrievalLabel({ status: "ok", alerts: 0, escalated: 0, auto_executed: 0, tool_servers: [] }),
+    ).toBeNull();
+  });
+  test("isRetrievalComparison rejects other shapes", () => {
+    expect(isRetrievalComparison(null)).toBe(false);
+    expect(isRetrievalComparison({ with_category_filter: {} })).toBe(false);
+  });
+  test("real backend retrieval_comparison.json converts to chart rows", () => {
+    const p = join(import.meta.dir, "../../../backend/results/retrieval_comparison.json");
+    if (!existsSync(p)) return; // backend not checked out next to frontend
+    const r = JSON.parse(readFileSync(p, "utf8")) as ApiRetrievalComparison;
+    expect(isRetrievalComparison(r)).toBe(true);
+    const rows = retrievalRows(r.with_category_filter);
+    expect(rows.map((x) => x.metric)).toEqual(["hit@1", "hit@3", "MRR ×100"]);
+    expect(rows[0].chroma).toBe(Math.round(r.with_category_filter.chroma["hit@1"] * 1000) / 10);
+    expect(rows[2].random).toBe(Math.round(r.with_category_filter.random_baseline.mrr * 1000) / 10);
   });
 });
 

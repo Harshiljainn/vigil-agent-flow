@@ -155,7 +155,13 @@ export type ApiHealth = {
   llm_model?: string | null;
   llm_calls_used?: number;
   llm_max_calls?: number;
+  /** Active retriever and knowledge base (Stage 5). */
+  retriever?: ApiRetrieverName;
+  corpus?: "v1" | "v2";
+  corpus_docs?: number;
 };
+
+export type ApiRetrieverName = "tfidf" | "chroma" | "hybrid";
 
 export type ApiThresholdsIn = { cost_limit_usd: number; confidence_min: number };
 
@@ -237,6 +243,27 @@ export type ApiEvaluation = {
   by_category?: { top1: ApiCategoryBreakdown; all_options: ApiCategoryBreakdown };
 };
 
+export type ApiRetrievalScores = { n: number; "hit@1": number; "hit@3": number; mrr: number };
+
+export type ApiRetrievalBlock = { random_baseline: ApiRetrievalScores } & Record<
+  ApiRetrieverName,
+  ApiRetrievalScores & { by_category?: Partial<Record<ApiCategory, ApiRetrievalScores>> }
+>;
+
+/** results/retrieval_comparison.json, passed through unchanged by GET /evaluation/retrieval. */
+export type ApiRetrievalComparison = {
+  note: string;
+  setup: {
+    corpus: string;
+    documents: number;
+    queries: number;
+    hybrid: string;
+    embedding_model: string;
+  };
+  with_category_filter: ApiRetrievalBlock;
+  without_filter: ApiRetrievalBlock;
+};
+
 export type AuditFilter = { category?: ApiCategory; route?: ApiRoute; status?: string };
 
 // ---------- transport ----------
@@ -312,5 +339,6 @@ export const api = {
     request<ApiPreview>("/thresholds/preview", { method: "POST", body }),
   audit: (filter: AuditFilter = {}) => request<ApiAuditRecord[]>(`/audit${query(filter)}`),
   evaluation: () => request<ApiEvaluation>("/evaluation"),
+  retrievalEvaluation: () => request<ApiRetrievalComparison>("/evaluation/retrieval"),
   kpis: () => request<ApiKpis>("/kpis"),
 };

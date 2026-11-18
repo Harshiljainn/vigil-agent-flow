@@ -44,8 +44,8 @@ export const PIPELINE_NODES: PipelineNode[] = [
     name: "Synthesizer",
     kind: "agent",
     built: true,
-    role: "Code computes confidence: combines supporting signals by source reliability (noisy-OR), lowers it for contradicting signals, retrieves the top 3 documents (TF-IDF over 16 hand-written docs) and lowers it again if the alert is not grounded. The summary and reasoning text come from Gemini (VIGIL_LLM=gemini) or a rule template (VIGIL_LLM=off).",
-    code: "vigilai/agents.py SynthesizerAgent + retrieval.py TfidfRetriever",
+    role: "Code computes confidence: combines supporting signals by source reliability (noisy-OR), lowers it for contradicting signals, retrieves the top 3 same-category documents (TF-IDF by default; ChromaDB vectors or a hybrid with VIGIL_RETRIEVER, over corpus v1 or v2) and lowers it again if the alert is not grounded. The summary and reasoning text come from Gemini (VIGIL_LLM=gemini) or a rule template (VIGIL_LLM=off).",
+    code: "vigilai/agents.py SynthesizerAgent + retrieval.py",
   },
   {
     id: "strategist",
@@ -87,8 +87,9 @@ export const BUILT: Component[] = [
       "Typed pydantic inputs and outputs; reasoning from Gemini (free tier, cached, rate-limited, budgeted) or the rule-based fallback.",
   },
   {
-    name: "Retrieval (RAG baseline)",
-    detail: "TF-IDF search over 16 hand-written playbooks and incident notes.",
+    name: "Retrieval (RAG)",
+    detail:
+      "TF-IDF (default), ChromaDB vector search (all-MiniLM-L6-v2, local ONNX) or a hybrid of both, over hand-written playbooks and incident notes: corpus v1 (16 docs) or v2 (56 docs).",
   },
   {
     name: "Decision Gate",
@@ -108,13 +109,13 @@ export const BUILT: Component[] = [
   },
   {
     name: "Evaluation harness",
-    detail: "Gate vs confidence-only baseline on synthetic scenarios, with threshold sweeps.",
+    detail:
+      "Gate vs confidence-only baseline on synthetic scenarios, with threshold sweeps; retrieval hit@k and MRR on a hand-labelled query set.",
   },
 ];
 
 /** Parts described in the design but not built yet. */
 export const PLANNED: Component[] = [
-  { name: "ChromaDB vector store", detail: "Replace TF-IDF retrieval with embeddings." },
   { name: "LangGraph orchestration", detail: "Run the pipeline stages as a graph." },
   {
     name: "Live data APIs",

@@ -143,7 +143,7 @@ export function NodeDetail({ node, view }: { node: PipelineNode; view: ApiAlertV
           <Section title={`Input signals (${a.signals.length})`}>
             <SignalList signals={a.signals} />
           </Section>
-          <Section title={`Retrieved evidence (${a.evidence.length}, TF-IDF score)`}>
+          <Section title={`Retrieved evidence (${a.evidence.length}, retrieval score)`}>
             {a.evidence.length ? (
               <ul className="space-y-2">
                 {a.evidence.map((e) => (

@@ -22,8 +22,19 @@ import {
   type ApiCategory,
   type ApiEvalMetrics,
   type ApiEvaluation,
+  type ApiRetrievalComparison,
 } from "@/lib/api";
-import { isEvaluation, paretoSeries, pct1, sweepPointAt, toCategory } from "@/lib/adapter";
+import {
+  RETRIEVERS,
+  isEvaluation,
+  isRetrievalComparison,
+  paretoSeries,
+  pct1,
+  retrievalLabel,
+  retrievalRows,
+  sweepPointAt,
+  toCategory,
+} from "@/lib/adapter";
 import { cn } from "@/lib/utils";
 import { useVigil } from "@/state/vigil";
 
@@ -34,7 +45,7 @@ export const Route = createFileRoute("/evaluation")({
       {
         name: "description",
         content:
-          "Decision Gate vs confidence-only baseline on synthetic scenarios, with a confidence-threshold sweep.",
+          "Decision Gate vs confidence-only baseline on synthetic scenarios, with a confidence-threshold sweep, and a TF-IDF vs ChromaDB vs hybrid retrieval comparison.",
       },
       { property: "og:title", content: "Evaluation — VigilAI" },
       {
@@ -447,6 +458,157 @@ function Evaluation() {
           </p>
         )}
       </div>
+
+      <RetrievalSection />
+    </div>
+  );
+}
+
+const RETRIEVER_STYLE = {
+  tfidf: { label: "TF-IDF", color: "var(--primary)" },
+  chroma: { label: "ChromaDB vectors", color: "var(--warn)" },
+  hybrid: { label: "Hybrid (average)", color: "var(--ok)" },
+} as const;
+
+type RetrievalMode = "with_category_filter" | "without_filter";
+
+/** Stage 5: results/retrieval_comparison.json via GET /evaluation/retrieval (live mode only). */
+function RetrievalSection() {
+  const { health } = useVigil();
+  const [data, setData] = useState<ApiRetrievalComparison | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [rmode, setRmode] = useState<RetrievalMode>("with_category_filter");
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .retrievalEvaluation()
+      .then((raw) => {
+        if (cancelled) return;
+        if (isRetrievalComparison(raw)) setData(raw);
+        else setError("GET /evaluation/retrieval returned an unexpected shape.");
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? "results/retrieval_comparison.json not found. Run `python -m vigilai.evaluate --retrieval` in backend/."
+            : e instanceof Error
+              ? e.message
+              : String(e),
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const active = retrievalLabel(health);
+  const block = data?.[rmode];
+  const rows = block ? retrievalRows(block) : [];
+
+  return (
+    <div className="panel mt-4 p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Retrieval</p>
+          <p className="text-xs text-muted-foreground">
+            {data
+              ? `TF-IDF vs ChromaDB vs hybrid on corpus ${data.setup.corpus} · ${data.setup.documents} docs · ${data.setup.queries} hand-labelled queries`
+              : "TF-IDF vs ChromaDB vs hybrid"}
+            {active ? ` · active in the API: ${active}` : ""}
+          </p>
+        </div>
+        {data && (
+          <select
+            value={rmode}
+            onChange={(e) => setRmode(e.target.value as RetrievalMode)}
+            className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
+            aria-label="Retrieval setting"
+          >
+            <option value="with_category_filter">With category filter (as the pipeline)</option>
+            <option value="without_filter">Whole corpus, no filter</option>
+          </select>
+        )}
+      </div>
+
+      {error ? (
+        <p className="text-sm text-muted-foreground">{error}</p>
+      ) : !data || !block ? (
+        <p className="text-sm text-muted-foreground">Loading retrieval results…</p>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-5">
+          <div className="overflow-x-auto lg:col-span-2">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="p-3">Retriever</th>
+                  <th className="pr-3">hit@1</th>
+                  <th className="pr-3">hit@3</th>
+                  <th className="pr-3">MRR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RETRIEVERS.map((k) => (
+                  <tr key={k} className="border-b border-border/60">
+                    <td className="p-3">
+                      <span
+                        className="mr-2 inline-block h-2 w-2 rounded-full"
+                        style={{ backgroundColor: RETRIEVER_STYLE[k].color }}
+                      />
+                      {RETRIEVER_STYLE[k].label}
+                    </td>
+                    <td className="pr-3 font-mono">{fmt(block[k]["hit@1"])}%</td>
+                    <td className="pr-3 font-mono">{fmt(block[k]["hit@3"])}%</td>
+                    <td className="pr-3 font-mono">{block[k].mrr.toFixed(3)}</td>
+                  </tr>
+                ))}
+                <tr className="border-b border-border/60 text-muted-foreground">
+                  <td className="p-3">Random ranking (expected)</td>
+                  <td className="pr-3 font-mono">{fmt(block.random_baseline["hit@1"])}%</td>
+                  <td className="pr-3 font-mono">{fmt(block.random_baseline["hit@3"])}%</td>
+                  <td className="pr-3 font-mono">{block.random_baseline.mrr.toFixed(3)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="px-1 py-3 text-xs text-muted-foreground">
+              hit@k: share of queries with a relevant document in the top k. MRR: mean of 1 / rank
+              of the first relevant document. Hybrid = {data.setup.hybrid}. Embeddings:{" "}
+              {data.setup.embedding_model}.
+            </p>
+          </div>
+          <div className="lg:col-span-3">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={rows} margin={{ left: 0, right: 8 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="metric" stroke="var(--muted-foreground)" fontSize={11} />
+                <YAxis domain={[0, 100]} stroke="var(--muted-foreground)" fontSize={11} />
+                <Tooltip
+                  contentStyle={tt}
+                  cursor={{ fill: "var(--surface-2)" }}
+                  formatter={(v: number, name: string, item: { payload?: { metric?: string } }) => [
+                    item.payload?.metric?.startsWith("MRR") ? (v / 100).toFixed(3) : `${v}%`,
+                    name,
+                  ]}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {RETRIEVERS.map((k) => (
+                  <Bar
+                    key={k}
+                    dataKey={k}
+                    name={RETRIEVER_STYLE[k].label}
+                    fill={RETRIEVER_STYLE[k].color}
+                    radius={[4, 4, 0, 0]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+      {data && (
+        <p className="mt-2 text-xs text-muted-foreground">Caveat from the backend: "{data.note}"</p>
+      )}
     </div>
   );
 }
