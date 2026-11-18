@@ -1,9 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useMemo, useState } from "react";
-import { CategoryBadge, PageHeading, ReasoningBadge, money } from "@/components/bits";
+import { toast } from "sonner";
+import {
+  CategoryBadge,
+  PageHeading,
+  ReasoningBadge,
+  formatDateTime,
+  formatDuration,
+  money,
+} from "@/components/bits";
 import { ACTION_META, CATEGORY_META, type Category, type Decision } from "@/data/vigilai";
-import { reasoningLabel, sortDecisions, type AuditSortKey } from "@/lib/adapter";
+import { inDateRange, reasoningLabel, sortDecisions, type AuditSortKey } from "@/lib/adapter";
+import { api, type ApiAuditVerify } from "@/lib/api";
 import { useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/audit")({
@@ -47,7 +56,25 @@ const COLUMNS: { key: AuditSortKey | null; label: string; className?: string }[]
 ];
 
 function Audit() {
-  const { decisions } = useVigil();
+  const { decisions, mode } = useVigil();
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [chain, setChain] = useState<ApiAuditVerify | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const verifyChain = async () => {
+    setVerifying(true);
+    try {
+      const v = await api.verifyAudit();
+      setChain(v);
+      if (v.ok) toast.success(`Audit hash chain intact (${v.records} records).`);
+      else toast.error(`Audit hash chain broken at ${v.breaks.length} place(s).`);
+    } catch (e) {
+      toast.error(`Verify failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setVerifying(false);
+    }
+  };
   const [cat, setCat] = useState<Category | "all">("all");
   const [route, setRoute] = useState<"all" | "auto" | "human">("all");
   const [status, setStatus] = useState<Status | "all">("all");
@@ -60,7 +87,8 @@ function Audit() {
         (d) =>
           (cat === "all" || d.category === cat) &&
           (route === "all" || d.mode === route) &&
-          (status === "all" || d.status === status),
+          (status === "all" || d.status === status) &&
+          inDateRange(d.timestamp, from, to),
       )
       .filter(
         (d) =>
@@ -69,11 +97,10 @@ function Audit() {
             .toLowerCase()
             .includes(q.toLowerCase()),
       );
-    // Default order: newest first (demo rows by timestamp; live rows have no timestamp yet
-    // and already arrive newest first).
+    // Default order: newest first by timestamp (UTC ISO strings sort correctly as text).
     const base = [...filtered].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     return sort ? sortDecisions(base, sort.key, sort.dir) : base;
-  }, [decisions, cat, route, status, q, sort]);
+  }, [decisions, cat, route, status, q, sort, from, to]);
 
   const toggleSort = (key: AuditSortKey) =>
     setSort((s) =>
@@ -111,19 +138,38 @@ function Audit() {
   };
 
   const sel = "rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm";
-  const filtered = cat !== "all" || route !== "all" || status !== "all" || q !== "";
+  const filtered =
+    cat !== "all" || route !== "all" || status !== "all" || q !== "" || from !== "" || to !== "";
   return (
     <div>
       <PageHeading
         title="Audit Log"
         subtitle={`${rows.length} of ${decisions.length} decisions · immutable record of every agent and human action`}
         actions={
-          <button
-            onClick={exportCsv}
-            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
-          >
-            Export CSV
-          </button>
+          <div className="flex gap-2">
+            {mode === "live" && (
+              <button
+                onClick={() => void verifyChain()}
+                disabled={verifying}
+                title={chain?.breaks.map((b) => `#${b.seq}: ${b.reason}`).join("\n") || undefined}
+                className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-surface-2 disabled:opacity-50"
+              >
+                {verifying
+                  ? "Verifying…"
+                  : chain === null
+                    ? "Verify hash chain"
+                    : chain.ok
+                      ? `Chain intact · ${chain.records} records`
+                      : `Chain broken · ${chain.breaks.length} issue(s)`}
+              </button>
+            )}
+            <button
+              onClick={exportCsv}
+              className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
+            >
+              Export CSV
+            </button>
+          </div>
         }
       />
       <div className="mb-4 flex flex-wrap gap-2">
@@ -169,9 +215,33 @@ function Audit() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          From
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            className={sel}
+            aria-label="From date"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          To
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            className={sel}
+            aria-label="To date"
+          />
+        </label>
         {(filtered || sort) && (
           <button
             onClick={() => {
+              setFrom("");
+              setTo("");
               setCat("all");
               setRoute("all");
               setStatus("all");
@@ -231,7 +301,7 @@ function Audit() {
                   <div className="text-muted-foreground">{d.alertId}</div>
                 </td>
                 <td className="font-mono text-xs text-muted-foreground">
-                  {d.timestamp ? d.timestamp.slice(0, 16).replace("T", " ") : "—"}
+                  {formatDateTime(d.timestamp)}
                 </td>
                 <td>
                   <CategoryBadge category={d.category} />
@@ -259,7 +329,16 @@ function Audit() {
                   {d.mode === "auto" ? (
                     <span className="text-primary">Agent (auto)</span>
                   ) : (
-                    (d.human ?? "—")
+                    <span
+                      title={d.reviewedAt ? `Reviewed ${formatDateTime(d.reviewedAt)}` : undefined}
+                    >
+                      {d.human ?? "—"}
+                      {d.timeToDecisionS !== undefined && (
+                        <div className="font-mono text-xs text-muted-foreground">
+                          after {formatDuration(d.timeToDecisionS)}
+                        </div>
+                      )}
+                    </span>
                   )}
                 </td>
                 <td className="font-mono">{money(d.cost)}</td>

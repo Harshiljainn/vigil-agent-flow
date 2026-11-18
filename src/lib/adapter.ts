@@ -28,6 +28,7 @@ import type {
   ReasoningSource,
   Status,
 } from "../data/vigilai";
+import { DEMO_NOW_MS } from "../data/vigilai";
 
 // ---------- categories ----------
 
@@ -157,7 +158,7 @@ export function toAlert(v: ApiAlertView): Alert {
     severity: a.severity,
     summary: lead ? capitalize(lead.summary) : "Disruption signal",
     confidence: toPct(a.confidence),
-    createdAt: "", // backend has no timestamps yet (database stage)
+    createdAt: v.created_at ?? "",
     status: toStatus(v.status),
     shipments: [], // backend gives a count, not IDs
     shipmentCount: a.affected_shipments,
@@ -196,7 +197,7 @@ export function toDecisions(audit: ApiAuditRecord[]): Decision[] {
       const d: Decision = {
         id: `DEC-${String(g.seq).padStart(4, "0")}`,
         alertId: g.alert_id,
-        timestamp: "", // backend has no timestamps yet (database stage)
+        timestamp: g.created_at ?? "",
         category: toCategory(g.category),
         action: toActionType(backendAction),
         mode: g.route === "auto_execute" ? "auto" : "human",
@@ -213,6 +214,10 @@ export function toDecisions(audit: ApiAuditRecord[]): Decision[] {
         d.override = { recommended: review.recommended_action ?? g.action, chosen: review.action };
       }
       if (review?.note) d.note = review.note;
+      if (review?.created_at) d.reviewedAt = review.created_at;
+      if (typeof review?.time_to_decision_s === "number") {
+        d.timeToDecisionS = review.time_to_decision_s;
+      }
       d.reasoning = toReasoningSource(g);
       return d;
     });
@@ -253,10 +258,66 @@ export type DisplayKpis = {
   escalatedPct: number;
   /** Not measured by the backend; null means "—". */
   hoursSaved: number | null;
+  /** Audit records (gate decisions + human reviews) stored on today's local date. */
+  decisionsToday: number;
+  /** Mean seconds from escalation to review (backend /kpis); null = no timed reviews. */
+  avgTimeToDecisionS: number | null;
+  timedReviews: number;
 };
 
-/** Live KPIs: all from one /kpis response. Escalated% = 100 - Auto% so the two always agree. */
-export function toKpis(k: ApiKpis): DisplayKpis {
+/** True when a session expiry (ISO) has passed, or cannot be read. */
+export function sessionExpired(expiresAt: string, now: number = Date.now()): boolean {
+  const t = Date.parse(expiresAt);
+  return Number.isNaN(t) || t <= now;
+}
+
+/** True when two instants fall on the same calendar day in the browser's time zone. */
+export function sameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** How many ISO timestamps fall on the local calendar day of `now`. Empty/invalid ones are skipped. */
+export function countOnDay(timestamps: (string | null | undefined)[], now: Date): number {
+  let n = 0;
+  for (const ts of timestamps) {
+    if (!ts) continue;
+    const t = new Date(ts);
+    if (!Number.isNaN(t.getTime()) && sameLocalDay(t, now)) n++;
+  }
+  return n;
+}
+
+/**
+ * Date-range filter on a local calendar date. from/to are "YYYY-MM-DD" from <input type="date">
+ * (inclusive, either may be empty). A row without a timestamp only passes when no range is set.
+ */
+export function inDateRange(ts: string, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  const t = new Date(ts);
+  if (!ts || Number.isNaN(t.getTime())) return false;
+  const day = localDateKey(t);
+  return (!from || day >= from) && (!to || day <= to);
+}
+
+/** "YYYY-MM-DD" of an instant in the browser's time zone. */
+export function localDateKey(t: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
+}
+
+/**
+ * Live KPIs from one /kpis response, plus Decisions Today counted from the audit rows' real
+ * created_at. Escalated% = 100 - Auto% so the two always agree.
+ */
+export function toKpis(
+  k: ApiKpis,
+  audit: ApiAuditRecord[] = [],
+  now: Date = new Date(),
+): DisplayKpis {
   const autoPct = k.decisions ? toPct(k.automation_rate) : 0;
   return {
     activeAlerts: k.pending_reviews,
@@ -264,11 +325,21 @@ export function toKpis(k: ApiKpis): DisplayKpis {
     autoPct,
     escalatedPct: k.decisions ? 100 - autoPct : 0,
     hoursSaved: null,
+    decisionsToday: countOnDay(
+      audit.map((r) => r.created_at),
+      now,
+    ),
+    avgTimeToDecisionS: k.avg_time_to_decision_s ?? null,
+    timedReviews: k.timed_reviews ?? 0,
   };
 }
 
 /** Demo-mode KPIs computed from the mock data with the same rules as toKpis. */
-export function kpisFromDemo(alerts: Alert[], decisions: Decision[]): DisplayKpis {
+export function kpisFromDemo(
+  alerts: Alert[],
+  decisions: Decision[],
+  now: Date = new Date(DEMO_NOW_MS),
+): DisplayKpis {
   const auto = decisions.filter((d) => d.mode === "auto").length;
   const autoPct = decisions.length ? Math.round((auto / decisions.length) * 100) : 0;
   return {
@@ -277,6 +348,13 @@ export function kpisFromDemo(alerts: Alert[], decisions: Decision[]): DisplayKpi
     autoPct,
     escalatedPct: decisions.length ? 100 - autoPct : 0,
     hoursSaved: null,
+    // demo data is fixed in time, so "today" is the demo's own date
+    decisionsToday: countOnDay(
+      decisions.map((d) => d.timestamp),
+      now,
+    ),
+    avgTimeToDecisionS: null,
+    timedReviews: 0,
   };
 }
 

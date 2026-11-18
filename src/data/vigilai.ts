@@ -114,6 +114,9 @@ export const HUMANS = ["A. Mehta", "R. Iyer", "S. Fernandes", "K. Nair", "D. Kul
 
 export const DEFAULT_THRESHOLDS = { cost: 12000, confidence: 78 };
 
+/** The fixed "now" of the demo (mock) data; demo times are relative to it. */
+export const DEMO_NOW_MS = Date.UTC(2026, 8, 18, 9, 36);
+
 const t = (hoursAgo: number) =>
   new Date(Date.UTC(2026, 8, 18, 9, 10) - hoursAgo * 3600_000).toISOString();
 
@@ -788,6 +791,10 @@ export type Decision = {
   route?: "auto_execute" | "human_review";
   /** Live data only: which reasoning backend produced the agents' output. */
   reasoning?: ReasoningSource;
+  /** Live data only: when the human review was stored (UTC ISO). */
+  reviewedAt?: string;
+  /** Live data only: seconds from escalation to the human review. */
+  timeToDecisionS?: number;
 };
 
 /** Which backend wrote the Synthesizer/Strategist reasoning (live data only). */

@@ -8,8 +8,9 @@ import {
   PageHeading,
   ReversibleTag,
   SeverityDot,
+  alertAge,
+  formatDuration,
   money,
-  timeAgo,
 } from "@/components/bits";
 import { ACTION_META, IRREVERSIBLE_ACTIONS, type Alert } from "@/data/vigilai";
 import { useVigil } from "@/state/vigil";
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/queue")({
 });
 
 function Queue() {
-  const { pendingAlerts: pending } = useVigil();
+  const { pendingAlerts: pending, kpis, mode } = useVigil();
 
   return (
     <div>
@@ -51,6 +52,16 @@ function Queue() {
           These items exceeded the current cost/confidence threshold, or involve an irreversible
           action, so they require your sign-off.
         </p>
+        {mode === "live" && (
+          <p className="ml-auto shrink-0 text-sm text-muted-foreground">
+            Avg time to decision:{" "}
+            <span className="font-mono text-foreground">
+              {formatDuration(kpis.avgTimeToDecisionS)}
+            </span>
+            {kpis.timedReviews > 0 &&
+              ` · ${kpis.timedReviews} review${kpis.timedReviews === 1 ? "" : "s"}`}
+          </p>
+        )}
       </div>
 
       <div className="space-y-3">
@@ -68,14 +79,14 @@ function Queue() {
 }
 
 function QueueRow({ alert }: { alert: Alert }) {
-  const { approve, reject, thresholds, reviewer, busyAlertId } = useVigil();
+  const { approve, reject, thresholds, canReview: isReviewer, busyAlertId } = useVigil();
   const [open, setOpen] = useState(false);
   const [modify, setModify] = useState(false);
   const [chosen, setChosen] = useState(alert.recommendedOptionId);
 
   const recommended = alert.options.find((o) => o.id === alert.recommendedOptionId)!;
   const busy = busyAlertId === alert.id;
-  const canReview = reviewer.trim().length > 0 && !busy;
+  const canReview = isReviewer && !busy;
   const reason = alert.gateReasons?.length
     ? alert.gateReasons.join("; ")
     : IRREVERSIBLE_ACTIONS.includes(recommended.action)
@@ -95,7 +106,7 @@ function QueueRow({ alert }: { alert: Alert }) {
         <span className="font-mono text-xs text-muted-foreground">{alert.id}</span>
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{alert.summary}</span>
         <span className="hidden font-mono text-xs text-muted-foreground md:inline">
-          {money(recommended.cost)} · {alert.confidence}% · {timeAgo(alert.createdAt)}
+          {money(recommended.cost)} · {alert.confidence}% · {alertAge(alert)}
         </span>
         <ChevronDown
           className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")}
@@ -153,9 +164,9 @@ function QueueRow({ alert }: { alert: Alert }) {
             </p>
           )}
 
-          {!reviewer.trim() && (
+          {!isReviewer && (
             <p className="text-xs text-warn">
-              Enter your reviewer name in the header to approve or reject.
+              You are logged in as an operator. Only a reviewer can approve or reject.
             </p>
           )}
 
@@ -176,7 +187,8 @@ function QueueRow({ alert }: { alert: Alert }) {
             </button>
             <button
               onClick={() => setModify((m) => !m)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2"
+              disabled={!isReviewer}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PencilLine className="h-4 w-4" /> {modify ? "Close editor" : "Modify & Approve"}
             </button>

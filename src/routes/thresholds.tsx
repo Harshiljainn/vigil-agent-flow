@@ -46,6 +46,7 @@ function Thresholds() {
     resetThresholds,
     serverThresholds,
     applyThresholds,
+    canReview,
   } = useVigil();
   const live = mode === "live";
 
@@ -156,8 +157,14 @@ function Thresholds() {
             </button>
             <button
               onClick={() => void onApply()}
-              disabled={!dirty || applying}
-              title={live ? undefined : "No backend: nothing to apply to"}
+              disabled={!dirty || applying || !canReview}
+              title={
+                !live
+                  ? "No backend: nothing to apply to"
+                  : !canReview
+                    ? "Only a reviewer can change thresholds"
+                    : undefined
+              }
               className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {applying ? "Applying…" : "Apply"}

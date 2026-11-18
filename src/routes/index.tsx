@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { AlertCard } from "@/components/AlertCard";
-import { KpiCard, PageHeading } from "@/components/bits";
+import { KpiCard, PageHeading, formatDuration } from "@/components/bits";
 import { ACTION_META, CATEGORY_META, type ActionType, type Category } from "@/data/vigilai";
 import { useVigil } from "@/state/vigil";
 
@@ -70,14 +70,27 @@ function Overview() {
         subtitle="Real-time posture across 8 disruption categories, 3 tool servers, 2 reasoning agents (Gemini or rule-based) and the human decision gate."
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <KpiCard label="Active Alerts" value={String(kpis.activeAlerts)} hint="awaiting triage" />
-        <KpiCard label="Gate Decisions" value={String(kpis.decisions)} hint="across all lanes" />
+        <KpiCard
+          label="Decisions Today"
+          value={String(kpis.decisionsToday)}
+          hint={`gate + human · ${kpis.decisions} gate decisions in total`}
+        />
         <KpiCard label="% Auto-Executed" value={`${kpis.autoPct}%`} hint="within thresholds" />
         <KpiCard
           label="% Escalated to Human"
           value={`${kpis.escalatedPct}%`}
           hint="gate-forced review"
+        />
+        <KpiCard
+          label="Avg Time to Decision"
+          value={formatDuration(kpis.avgTimeToDecisionS)}
+          hint={
+            kpis.timedReviews
+              ? `escalation → review, ${kpis.timedReviews} review${kpis.timedReviews === 1 ? "" : "s"}`
+              : "no timed reviews yet"
+          }
         />
         <KpiCard
           label="Est. Human Hours Saved"

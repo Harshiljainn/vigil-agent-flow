@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   BarChart3,
@@ -6,6 +6,7 @@ import {
   ChevronRight,
   GitBranch,
   LayoutDashboard,
+  LogOut,
   Moon,
   Network,
   ScrollText,
@@ -13,7 +14,7 @@ import {
   Sun,
   UserCheck,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useVigil } from "@/state/vigil";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +33,18 @@ const TECH_BADGES = ["LLM Agents", "RAG", "MCP", "Human-in-the-Loop"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const { theme, toggleTheme, kpis, mode, health, reviewer, setReviewer } = useVigil();
+  const { theme, toggleTheme, kpis, mode, health, user, logout } = useVigil();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+  const onLogin = pathname === "/login";
+  // Live backend: every page needs a login. Demo mode (backend offline) needs none.
+  const needsLogin = mode === "live" && !user;
+
+  useEffect(() => {
+    if (needsLogin && !onLogin) void navigate({ to: "/login" });
+  }, [needsLogin, onLogin, navigate]);
+
+  if (onLogin) return <>{children}</>;
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -107,13 +119,29 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <input
-              value={reviewer}
-              onChange={(e) => setReviewer(e.target.value)}
-              placeholder="Reviewer name"
-              aria-label="Reviewer name"
-              className="h-8 w-40 rounded-lg border border-border bg-surface px-2.5 text-xs"
-            />
+            {user ? (
+              <>
+                <span className="text-xs" title={`Logged in as ${user.username}`}>
+                  <span className="font-medium">{user.name}</span>{" "}
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
+                      user.role === "reviewer" ? "bg-ok/20 text-ok" : "bg-primary/15 text-primary",
+                    )}
+                  >
+                    {user.role}
+                  </span>
+                </span>
+                <button
+                  onClick={() => void logout()}
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Log out
+                </button>
+              </>
+            ) : mode === "demo" ? (
+              <span className="text-xs text-muted-foreground">Demo mode · no login needed</span>
+            ) : null}
             <button
               onClick={toggleTheme}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
@@ -124,7 +152,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="flex-1 px-6 py-6">
-          {mode === "connecting" ? (
+          {mode === "connecting" || needsLogin ? (
             <p className="panel p-10 text-center text-sm text-muted-foreground">
               Loading data from the backend…
             </p>

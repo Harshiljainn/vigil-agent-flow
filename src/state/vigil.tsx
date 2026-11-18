@@ -20,9 +20,17 @@ import {
   type Alert,
   type Decision,
 } from "@/data/vigilai";
-import { ApiError, api, type ApiHealth } from "@/lib/api";
+import {
+  ApiError,
+  api,
+  setAuthToken,
+  setUnauthorizedHandler,
+  type ApiHealth,
+  type ApiUser,
+} from "@/lib/api";
 import {
   kpisFromDemo,
+  sessionExpired,
   toAlert,
   toDecisions,
   toKpis,
@@ -55,8 +63,15 @@ type VigilState = {
   reject: (alertId: string) => Promise<void>;
   /** Alert id currently being reviewed (request in flight). */
   busyAlertId: string | null;
-  reviewer: string;
-  setReviewer: (name: string) => void;
+  /** Logged-in user (live mode). Demo mode needs no login, so it is null there. */
+  user: ApiUser | null;
+  /** Live: a reviewer is logged in. Demo: always true (no backend, no login). */
+  canReview: boolean;
+  /** Live: anyone logged in (operator or reviewer). Demo: always true. */
+  canOperate: boolean;
+  /** POST /auth/login. Resolves to an error message, or null on success. */
+  login: (username: string, password: string) => Promise<string | null>;
+  logout: () => Promise<void>;
   theme: "dark" | "light";
   toggleTheme: () => void;
   kpis: DisplayKpis;
@@ -66,7 +81,11 @@ const Ctx = createContext<VigilState | null>(null);
 
 const POLL_MS = 15_000;
 const HEALTH_TIMEOUT_MS = 4_000;
-const REVIEWER_KEY = "vigilai.reviewer";
+const SESSION_KEY = "vigilai.session";
+/** Name recorded on demo-mode reviews (demo mode has no backend and no login). */
+const DEMO_REVIEWER = "Demo reviewer";
+
+type Session = { token: string; expiresAt: string; user: ApiUser };
 
 let seq = 3000;
 
@@ -90,7 +109,7 @@ async function fetchLive(): Promise<LiveData> {
     alerts: views.map(toAlert),
     queueSeqs: new Set(queue.map((r) => r.seq)),
     decisions: toDecisions(audit),
-    kpis: toKpis(k),
+    kpis: toKpis(k, audit),
     serverThresholds: toThresholds(th),
   };
 }
@@ -99,11 +118,24 @@ function errorText(e: unknown): string {
   return e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
 }
 
-function readReviewer(): string {
+function readSession(): Session | null {
   try {
-    return window.localStorage.getItem(REVIEWER_KEY) ?? "";
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as Session;
+    if (!s.token || !s.user || sessionExpired(s.expiresAt)) return null;
+    return s;
   } catch {
-    return "";
+    return null;
+  }
+}
+
+function writeSession(s: Session | null): void {
+  try {
+    if (s) window.localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    else window.localStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* storage unavailable: the session lives in memory only */
   }
 }
 
@@ -123,7 +155,8 @@ export function VigilProvider({ children }: { children: ReactNode }) {
   const [thresholds, setThresholdsState] = useState<Thresholds>(DEFAULT_THRESHOLDS);
   const thresholdsTouched = useRef(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [reviewer, setReviewerState] = useState("");
+  const [session, setSessionState] = useState<Session | null>(null);
+  const sessionChecked = useRef(false);
   const [busyAlertId, setBusyAlertId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -131,18 +164,20 @@ export function VigilProvider({ children }: { children: ReactNode }) {
     root.classList.toggle("dark", theme === "dark");
   }, [theme]);
 
-  useEffect(() => {
-    setReviewerState(readReviewer());
+  const setSession = useCallback((s: Session | null) => {
+    setAuthToken(s?.token ?? null);
+    writeSession(s);
+    setSessionState(s);
   }, []);
 
-  const setReviewer = useCallback((name: string) => {
-    setReviewerState(name);
-    try {
-      window.localStorage.setItem(REVIEWER_KEY, name);
-    } catch {
-      /* storage unavailable: keep it in memory only */
-    }
-  }, []);
+  useEffect(() => {
+    setSession(readSession());
+    setUnauthorizedHandler(() => {
+      setSession(null);
+      toast.error("Session expired or ended. Please log in again.", { id: "vigil-auth" });
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [setSession]);
 
   /** Health check, then (if reachable) a full data refresh. Never throws. */
   const sync = useCallback(async () => {
@@ -164,6 +199,17 @@ export function VigilProvider({ children }: { children: ReactNode }) {
         toast.success("Backend reachable — showing live data.", { id: "vigil-sync" });
       }
       modeRef.current = "live";
+      if (!sessionChecked.current) {
+        sessionChecked.current = true;
+        const stored = readSession();
+        if (stored) {
+          // the backend may have been reset or the session ended: confirm the token once
+          await api.me().then(
+            (m) => setSession({ ...stored, user: m.user, expiresAt: m.expires_at }),
+            () => setSession(null),
+          );
+        }
+      }
       setHealth(h);
       setLive(data);
       if (!thresholdsTouched.current) setThresholdsState(data.serverThresholds);
@@ -177,7 +223,7 @@ export function VigilProvider({ children }: { children: ReactNode }) {
         setMode("demo");
       }
     }
-  }, []);
+  }, [setSession]);
 
   useEffect(() => {
     void sync();
@@ -248,15 +294,18 @@ export function VigilProvider({ children }: { children: ReactNode }) {
     [demoAlerts],
   );
 
+  const user = isLive ? (session?.user ?? null) : null;
+  const canReview = mode === "demo" || user?.role === "reviewer";
+  const canOperate = mode === "demo" || user !== null;
+
   const review = useCallback(
     async (alertId: string, verdict: "approve" | "reject", optionId: string | null) => {
-      const name = reviewer.trim();
-      if (!name) {
-        toast.error("Enter your reviewer name in the header first.");
+      if (!isLive) {
+        resolveDemo(alertId, optionId, DEMO_REVIEWER, verdict === "reject");
         return;
       }
-      if (!isLive) {
-        resolveDemo(alertId, optionId, name, verdict === "reject");
+      if (!canReview || !user) {
+        toast.error("Only a reviewer can approve or reject. Log in as a reviewer.");
         return;
       }
       const alert = live.alerts.find((a) => a.id === alertId);
@@ -277,11 +326,12 @@ export function VigilProvider({ children }: { children: ReactNode }) {
       setBusyAlertId(alertId);
       try {
         await api.review(alert.auditSeq, {
-          reviewer: name,
           verdict,
           ...(chosenAction ? { chosen_action: chosenAction } : {}),
         });
-        toast.success(`${alertId} ${verdict === "approve" ? "approved" : "rejected"} by ${name}`);
+        toast.success(
+          `${alertId} ${verdict === "approve" ? "approved" : "rejected"} by ${user.name}`,
+        );
       } catch (e) {
         toast.error(`Review failed: ${errorText(e)}`);
       } finally {
@@ -289,7 +339,7 @@ export function VigilProvider({ children }: { children: ReactNode }) {
         setBusyAlertId(null);
       }
     },
-    [reviewer, isLive, live, resolveDemo, sync],
+    [canReview, user, isLive, live, resolveDemo, sync],
   );
 
   const approve = useCallback(
@@ -301,6 +351,10 @@ export function VigilProvider({ children }: { children: ReactNode }) {
   const applyThresholds = useCallback(async () => {
     if (!isLive) {
       toast.error("No backend: thresholds can only be applied when the backend is running.");
+      return false;
+    }
+    if (!canReview) {
+      toast.error("Only a reviewer can change thresholds.");
       return false;
     }
     try {
@@ -318,7 +372,41 @@ export function VigilProvider({ children }: { children: ReactNode }) {
       toast.error(`Apply failed: ${errorText(e)}`);
       return false;
     }
-  }, [isLive, thresholds, sync]);
+  }, [isLive, canReview, thresholds, sync]);
+
+  const login = useCallback(
+    async (username: string, password: string) => {
+      try {
+        const r = await api.login(username, password);
+        setSession({ token: r.token, expiresAt: r.expires_at, user: r.user });
+        sessionChecked.current = true;
+        toast.success(`Logged in as ${r.user.name} (${r.user.role})`, { id: "vigil-auth" });
+        return null;
+      } catch (e) {
+        return e instanceof ApiError && e.status === 401
+          ? "Wrong username or password."
+          : errorText(e);
+      }
+    },
+    [setSession],
+  );
+
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {
+      /* already expired or backend offline: forget the token anyway */
+    }
+    setSession(null);
+  }, [setSession]);
+
+  // drop the session when it runs out while the page is open
+  useEffect(() => {
+    if (!session) return;
+    const ms = Date.parse(session.expiresAt) - Date.now();
+    const id = window.setTimeout(() => setSession(null), Math.max(0, Math.min(ms, 2 ** 31 - 1)));
+    return () => window.clearTimeout(id);
+  }, [session, setSession]);
 
   const kpis = useMemo<DisplayKpis>(
     () => (isLive ? live.kpis : kpisFromDemo(alerts, decisions)),
@@ -340,8 +428,11 @@ export function VigilProvider({ children }: { children: ReactNode }) {
     approve,
     reject,
     busyAlertId,
-    reviewer,
-    setReviewer,
+    user,
+    canReview,
+    canOperate,
+    login,
+    logout,
     theme,
     toggleTheme: () => setTheme((t) => (t === "dark" ? "light" : "dark")),
     kpis,

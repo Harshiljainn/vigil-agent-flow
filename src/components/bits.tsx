@@ -3,8 +3,10 @@ import type { ReactNode } from "react";
 import {
   ACTION_META,
   CATEGORY_META,
+  DEMO_NOW_MS,
   SEVERITY_META,
   type ActionType,
+  type Alert,
   type Category,
   type ReasoningSource,
   type Severity,
@@ -247,12 +249,44 @@ export function delayLabel(o: { delayHours?: number; delayReductionHours: number
 }
 
 /** Backend data has no timestamps yet; an empty string renders as "—". */
-export function timeAgo(iso: string) {
+/**
+ * "5m ago". `now` defaults to the demo data's fixed time; live (backend) times pass Date.now().
+ */
+export function timeAgo(iso: string, now: number = DEMO_NOW_MS) {
   if (!iso) return "—";
-  const diff = Date.UTC(2026, 8, 18, 9, 36) - new Date(iso).getTime();
-  const mins = Math.max(1, Math.round(diff / 60000));
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = now - t;
+  if (diff < 60_000) return "just now";
+  const mins = Math.round(diff / 60000);
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.round(mins / 60);
   if (hrs < 48) return `${hrs}h ago`;
   return `${Math.round(hrs / 24)}d ago`;
+}
+
+/** Age of an alert: backend alerts (they have an audit seq) use real time, demo alerts the demo clock. */
+export function alertAge(alert: Pick<Alert, "createdAt" | "auditSeq">, now: number = Date.now()) {
+  return timeAgo(alert.createdAt, alert.auditSeq !== undefined ? now : DEMO_NOW_MS);
+}
+
+/** Local date and time "2026-11-18 14:05" for an ISO timestamp, or "—". */
+export function formatDateTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}`;
+}
+
+/** Seconds -> "42s", "3m 05s", "2h 10m", "1d 4h"; null -> "—". */
+export function formatDuration(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return "—";
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(s % 60).padStart(2, "0")}s`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }

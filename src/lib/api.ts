@@ -132,6 +132,8 @@ export type ApiAlertView = {
   audit_seq: number;
   status: string;
   reasoning?: ApiAgentReasoning | null;
+  /** Stage 7: when the gate decided (UTC ISO). */
+  created_at?: string | null;
 };
 
 export type ApiAuditRecord = {
@@ -160,6 +162,13 @@ export type ApiAuditRecord = {
   llm_fallback?: boolean;
   fallback_reason?: string | null;
   origin?: ApiOrigin;
+  /** Stage 7: UTC ISO time the record was stored (for a review record = reviewed_at). */
+  created_at?: string | null;
+  /** Review records: seconds from escalation to the review. */
+  time_to_decision_s?: number | null;
+  /** Hash chain (GET /audit/verify). */
+  prev_hash?: string | null;
+  hash?: string | null;
 };
 
 export type ApiHealth = {
@@ -179,6 +188,33 @@ export type ApiHealth = {
   /** Stage 6: VIGIL_SIGNALS and each MCP server's last known state. */
   signals?: "replay" | "live";
   mcp_servers?: ApiServerStatus[];
+  /** Stage 7: state is stored in SQLite; write endpoints need a login. */
+  persistence?: string;
+  auth?: boolean;
+};
+
+export type ApiRole = "operator" | "reviewer";
+
+export type ApiUser = { username: string; name: string; role: ApiRole };
+
+export type ApiLogin = { token: string; expires_at: string; user: ApiUser };
+
+export type ApiMe = { user: ApiUser; expires_at: string };
+
+export type ApiAuditVerify = {
+  ok: boolean;
+  records: number;
+  last_hash: string | null;
+  breaks: { seq: number; reason: string }[];
+};
+
+export type ApiThresholdChange = {
+  id: number;
+  username: string;
+  field: "cost_limit_usd" | "confidence_min";
+  old_value: number;
+  new_value: number;
+  created_at: string;
 };
 
 export type ApiServerState = "ok" | "empty" | "stale_cache" | "failing" | "not_run" | "replay";
@@ -221,8 +257,8 @@ export type ApiRetrieverName = "tfidf" | "chroma" | "hybrid";
 
 export type ApiThresholdsIn = { cost_limit_usd: number; confidence_min: number };
 
+/** The reviewer is the logged-in user (Stage 7), so the body has no name. */
 export type ApiReviewIn = {
-  reviewer: string;
   verdict: "approve" | "reject";
   note?: string | null;
   /** Modify & Approve: backend action name of the option the reviewer picked. */
@@ -258,6 +294,9 @@ export type ApiKpis = {
   reviews_done: number;
   /** origin=live alerts; rates above cover synthetic alerts only. */
   live_alerts?: number;
+  /** Stage 7: mean seconds from escalation to review, null when no review has a time. */
+  avg_time_to_decision_s?: number | null;
+  timed_reviews?: number;
 };
 
 /** One metrics block from backend/vigilai/evaluate.py metrics(). All rates are 0-1. */
@@ -326,6 +365,19 @@ export type AuditFilter = { category?: ApiCategory; route?: ApiRoute; status?: s
 
 // ---------- transport ----------
 
+// Stage 7: the session token for write endpoints. Set by the state layer after login.
+let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+
+/** Called when the backend answers 401 to a request that carried a token (expired session). */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
 export class ApiError extends Error {
   /** HTTP status, or 0 when the backend could not be reached / timed out. */
   readonly status: number;
@@ -345,10 +397,13 @@ async function request<T>(
   let res: Response;
   try {
     const req: RequestInit = { method: init.method ?? "GET", signal: controller.signal };
+    const headers: Record<string, string> = {};
     if (init.body !== undefined) {
-      req.headers = { "Content-Type": "application/json" };
+      headers["Content-Type"] = "application/json";
       req.body = JSON.stringify(init.body);
     }
+    if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+    req.headers = headers;
     res = await fetch(`${API_URL}${path}`, req);
   } catch (e) {
     const timedOut = e instanceof DOMException && e.name === "AbortError";
@@ -366,8 +421,10 @@ async function request<T>(
     } catch {
       /* non-JSON error body */
     }
+    if (res.status === 401 && authToken && !path.startsWith("/auth/login")) onUnauthorized?.();
     throw new ApiError(res.status, `${res.status}: ${detail}`);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -401,4 +458,10 @@ export const api = {
   evaluation: () => request<ApiEvaluation>("/evaluation"),
   retrievalEvaluation: () => request<ApiRetrievalComparison>("/evaluation/retrieval"),
   kpis: () => request<ApiKpis>("/kpis"),
+  login: (username: string, password: string) =>
+    request<ApiLogin>("/auth/login", { method: "POST", body: { username, password } }),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+  me: () => request<ApiMe>("/auth/me"),
+  verifyAudit: () => request<ApiAuditVerify>("/audit/verify"),
+  thresholdHistory: () => request<ApiThresholdChange[]>("/thresholds/history"),
 };

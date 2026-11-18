@@ -10,8 +10,9 @@ import {
   ReversibleTag,
   SeverityDot,
   StatusPill,
+  alertAge,
+  formatDateTime,
   money,
-  timeAgo,
 } from "@/components/bits";
 
 export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean }) {
@@ -27,7 +28,9 @@ export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean 
         <SeverityDot severity={alert.severity} />
         <span className="font-mono text-xs text-muted-foreground">{alert.id}</span>
         {alert.origin && <OriginBadge origin={alert.origin} />}
-        <span className="text-xs text-muted-foreground">· {timeAgo(alert.createdAt)}</span>
+        <span className="text-xs text-muted-foreground" title={formatDateTime(alert.createdAt)}>
+          · {alertAge(alert)}
+        </span>
         <div className="ml-auto">
           <StatusPill status={alert.status} />
         </div>

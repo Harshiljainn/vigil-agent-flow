@@ -14,6 +14,7 @@ import { Route as AlertsRouteImport } from './routes/alerts'
 import { Route as ArchitectureRouteImport } from './routes/architecture'
 import { Route as AuditRouteImport } from './routes/audit'
 import { Route as EvaluationRouteImport } from './routes/evaluation'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as PipelineRouteImport } from './routes/pipeline'
 import { Route as QueueRouteImport } from './routes/queue'
 import { Route as ThresholdsRouteImport } from './routes/thresholds'
@@ -43,6 +44,11 @@ const EvaluationRoute = EvaluationRouteImport.update({
   path: '/evaluation',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PipelineRoute = PipelineRouteImport.update({
   id: '/pipeline',
   path: '/pipeline',
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/architecture': typeof ArchitectureRoute
   '/audit': typeof AuditRoute
   '/evaluation': typeof EvaluationRoute
+  '/login': typeof LoginRoute
   '/pipeline': typeof PipelineRoute
   '/queue': typeof QueueRoute
   '/thresholds': typeof ThresholdsRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/architecture': typeof ArchitectureRoute
   '/audit': typeof AuditRoute
   '/evaluation': typeof EvaluationRoute
+  '/login': typeof LoginRoute
   '/pipeline': typeof PipelineRoute
   '/queue': typeof QueueRoute
   '/thresholds': typeof ThresholdsRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/architecture': typeof ArchitectureRoute
   '/audit': typeof AuditRoute
   '/evaluation': typeof EvaluationRoute
+  '/login': typeof LoginRoute
   '/pipeline': typeof PipelineRoute
   '/queue': typeof QueueRoute
   '/thresholds': typeof ThresholdsRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/architecture'
     | '/audit'
     | '/evaluation'
+    | '/login'
     | '/pipeline'
     | '/queue'
     | '/thresholds'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/architecture'
     | '/audit'
     | '/evaluation'
+    | '/login'
     | '/pipeline'
     | '/queue'
     | '/thresholds'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/architecture'
     | '/audit'
     | '/evaluation'
+    | '/login'
     | '/pipeline'
     | '/queue'
     | '/thresholds'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   ArchitectureRoute: typeof ArchitectureRoute
   AuditRoute: typeof AuditRoute
   EvaluationRoute: typeof EvaluationRoute
+  LoginRoute: typeof LoginRoute
   PipelineRoute: typeof PipelineRoute
   QueueRoute: typeof QueueRoute
   ThresholdsRoute: typeof ThresholdsRoute
@@ -171,6 +184,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EvaluationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pipeline': {
       id: '/pipeline'
       path: '/pipeline'
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   ArchitectureRoute: ArchitectureRoute,
   AuditRoute: AuditRoute,
   EvaluationRoute: EvaluationRoute,
+  LoginRoute: LoginRoute,
   PipelineRoute: PipelineRoute,
   QueueRoute: QueueRoute,
   ThresholdsRoute: ThresholdsRoute,
