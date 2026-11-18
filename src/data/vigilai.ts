@@ -20,12 +20,9 @@ export type ActionType =
   | "force_majeure"
   | "notify_only";
 
-export type Status = "auto_executed" | "pending" | "rejected";
+export type Status = "auto_executed" | "pending" | "approved" | "rejected";
 
-export const CATEGORY_META: Record<
-  Category,
-  { label: string; color: string; agent: string }
-> = {
+export const CATEGORY_META: Record<Category, { label: string; color: string; agent: string }> = {
   weather: { label: "Weather", color: "var(--cat-weather)", agent: "WeatherAgent" },
   geopolitical: { label: "Geopolitical", color: "var(--cat-geopolitical)", agent: "GeoNewsAgent" },
   labor: { label: "Labor", color: "var(--cat-labor)", agent: "GeoNewsAgent" },
@@ -72,6 +69,14 @@ export type MitigationOption = {
   description: string;
   cost: number;
   delayReductionHours: number;
+  /** Live data only: original backend action name, e.g. "reroute_shipment". */
+  backendAction?: string;
+  /** Live data only: per-option reversibility from the backend (overrides ACTION_META). */
+  reversible?: boolean;
+  /** Live data only: delay the option causes, in hours (backend delay_hours). */
+  delayHours?: number;
+  /** Live data only: recommendation confidence used by the gate, 0-100. */
+  confidence?: number;
 };
 
 export type Alert = {
@@ -87,6 +92,12 @@ export type Alert = {
   evidence: Evidence[];
   options: MitigationOption[];
   recommendedOptionId: string;
+  /** Live data only: backend gives a count, not shipment IDs. */
+  shipmentCount?: number;
+  /** Live data only: seq of the gate's audit record (used for POST /queue/{seq}/review). */
+  auditSeq?: number;
+  /** Live data only: the Decision Gate's own reasons for its route. */
+  gateReasons?: string[];
 };
 
 export const HUMANS = ["A. Mehta", "R. Iyer", "S. Fernandes", "K. Nair", "D. Kulkarni"];
@@ -755,6 +766,12 @@ export type Decision = {
   confidence: number;
   status: "auto_executed" | "approved" | "rejected" | "pending";
   outcome: "correct" | "incorrect" | "pending";
+  /** Original backend action name (live data). */
+  backendAction?: string;
+  /** Set when the reviewer approved a different option than the one recommended. */
+  override?: { recommended: string; chosen: string };
+  /** Reviewer's free-text note. */
+  note?: string;
 };
 
 // Deterministic pseudo-random generator so the seeded history never shifts.
@@ -781,7 +798,9 @@ function buildHistory(): Decision[] {
     const confidence = Math.round(58 + rnd() * 41);
     const cost = Math.round((irreversible ? 9000 + rnd() * 38000 : rnd() * 26000) / 50) * 50;
     const auto =
-      !irreversible && cost <= DEFAULT_THRESHOLDS.cost && confidence >= DEFAULT_THRESHOLDS.confidence;
+      !irreversible &&
+      cost <= DEFAULT_THRESHOLDS.cost &&
+      confidence >= DEFAULT_THRESHOLDS.confidence;
     const accuracyByCategory: Record<Category, number> = {
       telemetry: 0.96,
       weather: 0.92,

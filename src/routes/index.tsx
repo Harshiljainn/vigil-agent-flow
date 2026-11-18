@@ -43,12 +43,15 @@ const tooltipStyle = {
 };
 
 function Overview() {
-  const { alerts, decisions, kpis } = useVigil();
+  const { alerts, decisions, kpis, mode } = useVigil();
 
   const byCategory = (Object.keys(CATEGORY_META) as Category[])
     .map((c) => ({
       name: CATEGORY_META[c].label,
-      value: alerts.filter((a) => a.category === c).length + decisions.filter((d) => d.category === c).length,
+      // Live: every alert has exactly one gate decision, so count alerts only (no double count).
+      value:
+        alerts.filter((a) => a.category === c).length +
+        (mode === "live" ? 0 : decisions.filter((d) => d.category === c).length),
       color: CATEGORY_META[c].color,
     }))
     .filter((d) => d.value > 0);
@@ -58,9 +61,7 @@ function Overview() {
     value: decisions.filter((d) => d.action === a).length,
   }));
 
-  const recent = [...alerts]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 5);
+  const recent = [...alerts].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
 
   return (
     <div>
@@ -70,20 +71,18 @@ function Overview() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiCard label="Active Alerts" value={String(kpis.activeAlerts)} trend={12} hint="awaiting triage" />
-        <KpiCard label="Decisions Today" value={String(kpis.decisionsToday)} trend={8} hint="across all lanes" />
-        <KpiCard label="% Auto-Executed" value={`${kpis.autoPct}%`} trend={5} hint="within thresholds" />
+        <KpiCard label="Active Alerts" value={String(kpis.activeAlerts)} hint="awaiting triage" />
+        <KpiCard label="Gate Decisions" value={String(kpis.decisions)} hint="across all lanes" />
+        <KpiCard label="% Auto-Executed" value={`${kpis.autoPct}%`} hint="within thresholds" />
         <KpiCard
           label="% Escalated to Human"
           value={`${kpis.escalatedPct}%`}
-          trend={-5}
           hint="gate-forced review"
         />
         <KpiCard
           label="Est. Human Hours Saved"
-          value={`${kpis.hoursSaved}h`}
-          trend={17}
-          hint="this week"
+          value={kpis.hoursSaved === null ? "—" : `${kpis.hoursSaved}h`}
+          hint="not measured yet"
         />
       </div>
 
@@ -130,7 +129,10 @@ function Overview() {
             </div>
             <div className="mt-1 grid grid-cols-2 gap-1">
               {byCategory.map((d) => (
-                <span key={d.name} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span
+                  key={d.name}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                >
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
                   {d.name}
                 </span>

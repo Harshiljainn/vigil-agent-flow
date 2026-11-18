@@ -4,6 +4,7 @@ import { ACTION_META, SEVERITY_META, type Alert } from "@/data/vigilai";
 import {
   CategoryBadge,
   ConfidenceBar,
+  delayLabel,
   GroundedBadge,
   ReversibleTag,
   SeverityDot,
@@ -36,7 +37,7 @@ export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean 
         <ConfidenceBar value={alert.confidence} />
         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           <Package className="h-3.5 w-3.5" />
-          {alert.shipments.length} shipments · {alert.supplier}
+          {alert.shipmentCount ?? alert.shipments.length} shipments · {alert.supplier}
         </span>
       </div>
 
@@ -82,12 +83,13 @@ export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean 
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium">{ACTION_META[o.action].label}</span>
-                  <ReversibleTag action={o.action} />
+                  <ReversibleTag action={o.action} reversible={o.reversible} />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{o.description}</p>
-                <div className="mt-2 flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+                <div className="mt-2 flex flex-wrap items-center gap-3 font-mono text-[11px] text-muted-foreground">
                   <span>{money(o.cost)}</span>
-                  <span>-{o.delayReductionHours}h delay</span>
+                  <span>{delayLabel(o)}</span>
+                  {o.backendAction && <span className="break-all">{o.backendAction}</span>}
                 </div>
                 {o.id === alert.recommendedOptionId && (
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-primary">

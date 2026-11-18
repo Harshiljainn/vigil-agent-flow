@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { KpiCard, PageHeading } from "@/components/bits";
-import { CATEGORY_META, type Category } from "@/data/vigilai";
+import { CATEGORY_META, DECISION_HISTORY, seedDecisionsFromAlerts, type Category } from "@/data/vigilai";
 import { useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/evaluation")({
@@ -19,7 +19,10 @@ export const Route = createFileRoute("/evaluation")({
 const tt = { backgroundColor: "var(--card)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12, color: "var(--foreground)" };
 
 function Evaluation() {
-  const { decisions, kpis } = useVigil();
+  const { kpis } = useVigil();
+  // Stage 3a: this page still uses mock outcomes. The API has no per-decision ground truth;
+  // it is wired to GET /evaluation (results/summary.json) in Stage 3b.
+  const decisions = [...seedDecisionsFromAlerts(), ...DECISION_HISTORY];
   const judged = decisions.filter((d) => d.outcome !== "pending");
   const acc = (ds: typeof judged) => (ds.length ? Math.round((ds.filter((d) => d.outcome === "correct").length / ds.length) * 100) : 0);
   const autoAcc = acc(judged.filter((d) => d.mode === "auto"));
@@ -39,7 +42,7 @@ function Evaluation() {
         <KpiCard label="Overall accuracy" value={`${acc(judged)}%`} trend={4} hint={`${judged.length} judged decisions`} />
         <KpiCard label="Auto-decision accuracy" value={`${autoAcc}%`} hint="Low-risk, gate-approved" />
         <KpiCard label="Human-reviewed accuracy" value={`${humanAcc}%`} hint="Escalated decisions" />
-        <KpiCard label="Analyst hours saved" value={`${kpis.hoursSaved}h`} trend={12} hint="vs. manual triage" />
+        <KpiCard label="Analyst hours saved" value={kpis.hoursSaved === null ? "—" : `${kpis.hoursSaved}h`} hint="vs. manual triage" />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="panel p-4">

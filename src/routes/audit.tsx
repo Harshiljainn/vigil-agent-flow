@@ -26,14 +26,14 @@ function Audit() {
     () =>
       decisions
         .filter((d) => (cat === "all" || d.category === cat) && (mode === "all" || d.mode === mode))
-        .filter((d) => !q || `${d.id} ${d.alertId} ${d.human ?? ""}`.toLowerCase().includes(q.toLowerCase()))
+        .filter((d) => !q || `${d.id} ${d.alertId} ${d.human ?? ""} ${d.backendAction ?? ""}`.toLowerCase().includes(q.toLowerCase()))
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
     [decisions, cat, mode, q],
   );
 
   const exportCsv = () => {
-    const head = "id,alert,time,category,action,mode,human,cost,confidence,status,outcome";
-    const body = rows.map((d) => [d.id, d.alertId, d.timestamp, d.category, d.action, d.mode, d.human ?? "", d.cost, d.confidence, d.status, d.outcome].join(","));
+    const head = "id,alert,time,category,action,backend_action,override_of,mode,human,cost,confidence,status,outcome";
+    const body = rows.map((d) => [d.id, d.alertId, d.timestamp, d.category, d.action, d.backendAction ?? "", d.override?.recommended ?? "", d.mode, d.human ?? "", d.cost, d.confidence, d.status, d.outcome].join(","));
     const url = URL.createObjectURL(new Blob([[head, ...body].join("\n")], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = "vigilai-audit.csv"; a.click();
@@ -69,10 +69,18 @@ function Audit() {
             {rows.map((d) => (
               <tr key={d.id} className="border-b border-border/60 hover:bg-surface-2/50">
                 <td className="p-3 font-mono text-xs">{d.id}<div className="text-muted-foreground">{d.alertId}</div></td>
-                <td className="font-mono text-xs text-muted-foreground">{d.timestamp.slice(0, 16).replace("T", " ")}</td>
+                <td className="font-mono text-xs text-muted-foreground">{d.timestamp ? d.timestamp.slice(0, 16).replace("T", " ") : "—"}</td>
                 <td><CategoryBadge category={d.category} /></td>
-                <td>{ACTION_META[d.action].label}</td>
-                <td>{d.mode === "auto" ? <span className="text-primary">Agent (auto)</span> : d.human}</td>
+                <td>
+                  {ACTION_META[d.action].label}
+                  {d.backendAction && <div className="font-mono text-xs text-muted-foreground">{d.backendAction}</div>}
+                  {d.override && (
+                    <div className="text-xs text-warn" title={d.note}>
+                      Override: recommended {d.override.recommended}
+                    </div>
+                  )}
+                </td>
+                <td>{d.mode === "auto" ? <span className="text-primary">Agent (auto)</span> : (d.human ?? "—")}</td>
                 <td className="font-mono">{money(d.cost)}</td>
                 <td className="font-mono">{d.confidence}%</td>
                 <td className="capitalize">{d.status.replace("_", " ")}</td>

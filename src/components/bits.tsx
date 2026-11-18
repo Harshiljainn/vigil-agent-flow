@@ -48,10 +48,7 @@ export function ConfidenceBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-28 overflow-hidden rounded-full bg-surface-2">
-        <div
-          className="h-full rounded-full bg-primary"
-          style={{ width: `${value}%` }}
-        />
+        <div className="h-full rounded-full bg-primary" style={{ width: `${value}%` }} />
       </div>
       <span className="font-mono text-xs text-muted-foreground">{value}%</span>
     </div>
@@ -61,6 +58,7 @@ export function ConfidenceBar({ value }: { value: number }) {
 const STATUS_STYLE: Record<Status, { label: string; color: string }> = {
   auto_executed: { label: "Auto-Executed", color: "var(--ok)" },
   pending: { label: "Pending Human Review", color: "var(--warn)" },
+  approved: { label: "Approved", color: "var(--ok)" },
   rejected: { label: "Rejected", color: "var(--destructive)" },
 };
 
@@ -80,8 +78,15 @@ export function StatusPill({ status }: { status: Status }) {
   );
 }
 
-export function ReversibleTag({ action }: { action: ActionType }) {
-  const rev = ACTION_META[action].reversible;
+/** `reversible` (per option, from the backend) wins over the per-action-type default. */
+export function ReversibleTag({
+  action,
+  reversible,
+}: {
+  action: ActionType;
+  reversible?: boolean | undefined;
+}) {
+  const rev = reversible ?? ACTION_META[action].reversible;
   return (
     <span
       className={cn(
@@ -140,7 +145,11 @@ export function KpiCard({
               up ? "text-ok" : "text-destructive",
             )}
           >
-            {up ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
+            {up ? (
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            ) : (
+              <ArrowDownRight className="h-3.5 w-3.5" />
+            )}
             {Math.abs(trend)}%
           </span>
         )}
@@ -174,7 +183,16 @@ export function money(n: number) {
   return n === 0 ? "$0" : `$${n.toLocaleString("en-US")}`;
 }
 
+/** Live options report the delay they cause; mock options report a delay reduction. */
+export function delayLabel(o: { delayHours?: number; delayReductionHours: number }) {
+  return o.delayHours !== undefined
+    ? `+${o.delayHours}h delay`
+    : `-${o.delayReductionHours}h delay`;
+}
+
+/** Backend data has no timestamps yet; an empty string renders as "—". */
 export function timeAgo(iso: string) {
+  if (!iso) return "—";
   const diff = Date.UTC(2026, 8, 18, 9, 36) - new Date(iso).getTime();
   const mins = Math.max(1, Math.round(diff / 60000));
   if (mins < 60) return `${mins}m ago`;

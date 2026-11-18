@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   CategoryBadge,
   ConfidenceBar,
+  delayLabel,
   PageHeading,
   ReversibleTag,
   SeverityDot,
@@ -26,7 +27,8 @@ export const Route = createFileRoute("/queue")({
       { property: "og:title", content: "Decision Queue — VigilAI" },
       {
         property: "og:description",
-        content: "Approve, reject or modify escalated mitigation decisions with full cost and reversibility context.",
+        content:
+          "Approve, reject or modify escalated mitigation decisions with full cost and reversibility context.",
       },
     ],
   }),
@@ -34,8 +36,7 @@ export const Route = createFileRoute("/queue")({
 });
 
 function Queue() {
-  const { alerts } = useVigil();
-  const pending = alerts.filter((a) => a.status === "pending");
+  const { pendingAlerts: pending } = useVigil();
 
   return (
     <div>
@@ -67,21 +68,28 @@ function Queue() {
 }
 
 function QueueRow({ alert }: { alert: Alert }) {
-  const { approve, reject, thresholds } = useVigil();
+  const { approve, reject, thresholds, reviewer, busyAlertId } = useVigil();
   const [open, setOpen] = useState(false);
   const [modify, setModify] = useState(false);
   const [chosen, setChosen] = useState(alert.recommendedOptionId);
 
   const recommended = alert.options.find((o) => o.id === alert.recommendedOptionId)!;
-  const reason = IRREVERSIBLE_ACTIONS.includes(recommended.action)
-    ? `Irreversible action (${ACTION_META[recommended.action].label}) always escalates`
-    : recommended.cost > thresholds.cost
-      ? `Cost ${money(recommended.cost)} exceeds ${money(thresholds.cost)} threshold`
-      : `Confidence ${alert.confidence}% below ${thresholds.confidence}% threshold`;
+  const busy = busyAlertId === alert.id;
+  const canReview = reviewer.trim().length > 0 && !busy;
+  const reason = alert.gateReasons?.length
+    ? alert.gateReasons.join("; ")
+    : IRREVERSIBLE_ACTIONS.includes(recommended.action)
+      ? `Irreversible action (${ACTION_META[recommended.action].label}) always escalates`
+      : recommended.cost > thresholds.cost
+        ? `Cost ${money(recommended.cost)} exceeds ${money(thresholds.cost)} threshold`
+        : `Confidence ${alert.confidence}% below ${thresholds.confidence}% threshold`;
 
   return (
     <div className="panel p-4">
-      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 text-left">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-3 text-left"
+      >
         <SeverityDot severity={alert.severity} withLabel={false} />
         <CategoryBadge category={alert.category} />
         <span className="font-mono text-xs text-muted-foreground">{alert.id}</span>
@@ -89,7 +97,9 @@ function QueueRow({ alert }: { alert: Alert }) {
         <span className="hidden font-mono text-xs text-muted-foreground md:inline">
           {money(recommended.cost)} · {alert.confidence}% · {timeAgo(alert.createdAt)}
         </span>
-        <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <ChevronDown
+          className={cn("h-4 w-4 text-muted-foreground transition-transform", open && "rotate-180")}
+        />
       </button>
 
       {open && (
@@ -101,7 +111,7 @@ function QueueRow({ alert }: { alert: Alert }) {
           <div className="flex flex-wrap items-center gap-4">
             <ConfidenceBar value={alert.confidence} />
             <span className="text-xs text-muted-foreground">
-              {alert.shipments.length} shipments · {alert.supplier}
+              {alert.shipmentCount ?? alert.shipments.length} shipments · {alert.supplier}
             </span>
           </div>
 
@@ -121,12 +131,13 @@ function QueueRow({ alert }: { alert: Alert }) {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium">{ACTION_META[o.action].label}</span>
-                    <ReversibleTag action={o.action} />
+                    <ReversibleTag action={o.action} reversible={o.reversible} />
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">{o.description}</p>
-                  <div className="mt-2 flex gap-3 font-mono text-[11px] text-muted-foreground">
+                  <div className="mt-2 flex flex-wrap gap-3 font-mono text-[11px] text-muted-foreground">
                     <span>{money(o.cost)}</span>
-                    <span>-{o.delayReductionHours}h</span>
+                    <span>{delayLabel(o)}</span>
+                    {o.backendAction && <span className="break-all">{o.backendAction}</span>}
                   </div>
                   <p className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-primary">
                     {isRec ? "Recommended" : isChosen ? "Selected" : "Alternative"}
@@ -142,16 +153,24 @@ function QueueRow({ alert }: { alert: Alert }) {
             </p>
           )}
 
+          {!reviewer.trim() && (
+            <p className="text-xs text-warn">
+              Enter your reviewer name in the header to approve or reject.
+            </p>
+          )}
+
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => approve(alert.id, chosen)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-ok/15 px-3 py-2 text-sm font-medium text-ok transition-colors hover:bg-ok/25"
+              onClick={() => void approve(alert.id, chosen)}
+              disabled={!canReview}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-ok/15 px-3 py-2 text-sm font-medium text-ok transition-colors hover:bg-ok/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Check className="h-4 w-4" /> Approve
             </button>
             <button
-              onClick={() => reject(alert.id)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/15 px-3 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/25"
+              onClick={() => void reject(alert.id)}
+              disabled={!canReview}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-destructive/15 px-3 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <X className="h-4 w-4" /> Reject
             </button>

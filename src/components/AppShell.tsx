@@ -32,7 +32,7 @@ const TECH_BADGES = ["LLM Agents", "RAG", "MCP", "Human-in-the-Loop"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const { theme, toggleTheme, kpis } = useVigil();
+  const { theme, toggleTheme, kpis, mode, health, reviewer, setReviewer } = useVigil();
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -88,13 +88,32 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/85 px-6 backdrop-blur">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-70" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
-            </span>
-            Agents online · 4 MCP servers connected
+            {mode === "live" && health ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ok opacity-70" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
+                </span>
+                <span title={health.tool_servers.join(", ")}>
+                  Backend online · {health.tool_servers.length} tool servers
+                </span>
+              </>
+            ) : mode === "demo" ? (
+              <span className="rounded-full bg-warn/20 px-2 py-0.5 text-[11px] font-semibold text-warn">
+                Demo data (backend offline)
+              </span>
+            ) : (
+              <span>Connecting to backend…</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <input
+              value={reviewer}
+              onChange={(e) => setReviewer(e.target.value)}
+              placeholder="Reviewer name"
+              aria-label="Reviewer name"
+              className="h-8 w-40 rounded-lg border border-border bg-surface px-2.5 text-xs"
+            />
             <button
               onClick={toggleTheme}
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
@@ -104,7 +123,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </header>
-        <main className="flex-1 px-6 py-6">{children}</main>
+        <main className="flex-1 px-6 py-6">
+          {mode === "connecting" ? (
+            <p className="panel p-10 text-center text-sm text-muted-foreground">
+              Loading data from the backend…
+            </p>
+          ) : (
+            children
+          )}
+        </main>
       </div>
     </div>
   );

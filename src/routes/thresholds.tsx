@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CategoryBadge, PageHeading, ReversibleTag, money } from "@/components/bits";
-import { ACTION_META, DEFAULT_THRESHOLDS } from "@/data/vigilai";
+import { ACTION_META } from "@/data/vigilai";
 import { gateVerdict, useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/thresholds")({
@@ -16,10 +16,13 @@ export const Route = createFileRoute("/thresholds")({
 });
 
 function Thresholds() {
-  const { alerts, thresholds, setThresholds } = useVigil();
-  const rows = alerts.map((a) => {
-    const opt = a.options.find((o) => o.id === a.recommendedOptionId) ?? a.options[0]!;
-    return { a, opt, v: gateVerdict(opt.cost, a.confidence, opt.action, thresholds) };
+  const { alerts, thresholds, setThresholds, resetThresholds } = useVigil();
+  const rows = alerts.flatMap((a) => {
+    const opt = a.options.find((o) => o.id === a.recommendedOptionId) ?? a.options[0];
+    if (!opt) return [];
+    // Live options carry the gate's own confidence and reversibility; mock ones fall back.
+    const conf = opt.confidence ?? a.confidence;
+    return [{ a, opt, conf, v: gateVerdict(opt.cost, conf, opt.action, thresholds, opt.reversible) }];
   });
   const autoCount = rows.filter((r) => r.v.auto).length;
 
@@ -30,7 +33,7 @@ function Thresholds() {
         subtitle="The Decision Gate auto-executes only when cost ≤ limit, confidence ≥ floor, and the action is reversible."
         actions={
           <button
-            onClick={() => setThresholds(DEFAULT_THRESHOLDS)}
+            onClick={resetThresholds}
             className="rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-surface-2"
           >
             Reset defaults
@@ -86,12 +89,12 @@ function Thresholds() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ a, opt, v }) => (
+              {rows.map(({ a, opt, conf, v }) => (
                 <tr key={a.id} className="border-b border-border/60">
                   <td className="p-3"><p className="font-mono text-xs">{a.id}</p><CategoryBadge category={a.category} /></td>
-                  <td><div className="flex flex-col gap-1"><span>{v.label}</span><ReversibleTag action={opt.action} /></div></td>
+                  <td><div className="flex flex-col gap-1"><span>{v.label}</span><ReversibleTag action={opt.action} reversible={opt.reversible} /></div></td>
                   <td className={v.costOk ? "" : "text-destructive"}>{money(opt.cost)}</td>
-                  <td className={v.confOk ? "" : "text-destructive"}>{a.confidence}%</td>
+                  <td className={v.confOk ? "" : "text-destructive"}>{conf}%</td>
                   <td className="pr-3">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${v.auto ? "bg-ok/15 text-ok" : "bg-warn/15 text-warn"}`}>
                       {v.auto ? "Auto" : "Escalate"}
