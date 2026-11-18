@@ -7,6 +7,7 @@ import {
   isEvaluation,
   kpisFromDemo,
   paretoSeries,
+  reasoningLabel,
   sortDecisions,
   sweepPointAt,
   toActionType,
@@ -15,6 +16,7 @@ import {
   toDecisions,
   toKpis,
   toPct,
+  toReasoningSource,
   toStatus,
   toThresholds,
 } from "./adapter";
@@ -383,5 +385,44 @@ describe("audit sorting", () => {
   test("does not mutate the input", () => {
     sortDecisions(rows, "cost", "asc");
     expect(rows.map((r) => r.id)).toEqual(["DEC-2", "DEC-1", "DEC-3"]);
+  });
+});
+
+describe("reasoning provenance (Stage 4)", () => {
+  test("records without LLM fields are rule-based", () => {
+    const src = toReasoningSource(rec({ seq: 1 }));
+    expect(src).toEqual({ backend: "rule", model: null, fallback: false, fallbackReason: null });
+    expect(reasoningLabel(src)).toBe("Rule");
+  });
+
+  test("gemini and fallback records keep backend, model and reason", () => {
+    const g = toReasoningSource(
+      rec({
+        seq: 1,
+        llm_backend: "gemini",
+        llm_model: "gemini-3.5-flash-lite",
+        llm_fallback: false,
+      }),
+    );
+    expect(reasoningLabel(g)).toBe("Gemini · gemini-3.5-flash-lite");
+    const fb = toReasoningSource(
+      rec({
+        seq: 2,
+        llm_backend: "rule",
+        llm_model: "gemini-3.5-flash-lite",
+        llm_fallback: true,
+        fallback_reason: "synthesizer: budget_exhausted; strategist: budget_exhausted",
+      }),
+    );
+    expect(reasoningLabel(fb)).toBe("Rule (fallback)");
+    expect(fb.fallbackReason).toContain("budget_exhausted");
+  });
+
+  test("toDecisions attaches the gate record's provenance", () => {
+    const [d] = toDecisions([
+      rec({ seq: 1, llm_backend: "gemini", llm_model: "m", llm_fallback: false }),
+    ]);
+    expect(d.reasoning?.backend).toBe("gemini");
+    expect(d.reasoning?.model).toBe("m");
   });
 });

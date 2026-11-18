@@ -11,6 +11,8 @@ export const API_URL: string = (
 ).replace(/\/+$/, "");
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/** A new run may call Gemini (rate-limited, free tier), so it gets a much longer timeout. */
+const RUN_TIMEOUT_MS = 120_000;
 
 // ---------- backend types ----------
 
@@ -63,6 +65,35 @@ export type ApiMitigationOption = {
   reversible: boolean;
   confidence: number;
   source_docs: string[];
+  /** Gemini only: share of the k Strategist samples that picked this action (0-1). */
+  agreement?: number | null;
+};
+
+export type ApiLlmBackend = "rule" | "gemini";
+
+/** Which reasoning backend produced an agent's output (backend schemas.Provenance). */
+export type ApiProvenance = {
+  backend: ApiLlmBackend;
+  model: string | null;
+  /** True when Gemini was asked but the rule-based result was used. */
+  fallback: boolean;
+  fallback_reason: string | null;
+};
+
+/** Synthesizer + Strategist reasoning for one alert (backend schemas.AgentReasoning). */
+export type ApiAgentReasoning = {
+  summary: string;
+  reasoning: string;
+  cited_doc_ids: string[];
+  strategist_rationale: string;
+  ranking: string[];
+  votes: Record<string, number>;
+  /** Strategist samples requested (0 = rule backend). */
+  k: number;
+  samples: number;
+  agreement: number | null;
+  synthesizer: ApiProvenance;
+  strategist: ApiProvenance;
 };
 
 export type ApiThresholds = {
@@ -84,6 +115,7 @@ export type ApiAlertView = {
   decision: ApiGateDecision;
   audit_seq: number;
   status: string;
+  reasoning?: ApiAgentReasoning | null;
 };
 
 export type ApiAuditRecord = {
@@ -106,6 +138,11 @@ export type ApiAuditRecord = {
   override: boolean;
   /** The gate's recommended action; set on override records only. */
   recommended_action: string | null;
+  /** "gemini" when any agent's output for this record came from Gemini. */
+  llm_backend?: ApiLlmBackend;
+  llm_model?: string | null;
+  llm_fallback?: boolean;
+  fallback_reason?: string | null;
 };
 
 export type ApiHealth = {
@@ -114,6 +151,10 @@ export type ApiHealth = {
   escalated: number;
   auto_executed: number;
   tool_servers: string[];
+  llm_backend?: ApiLlmBackend;
+  llm_model?: string | null;
+  llm_calls_used?: number;
+  llm_max_calls?: number;
 };
 
 export type ApiThresholdsIn = { cost_limit_usd: number; confidence_min: number };
@@ -259,7 +300,8 @@ export const api = {
     request<ApiHealth>("/health", timeoutMs !== undefined ? { timeoutMs } : {}),
   alerts: () => request<ApiAlertView[]>("/alerts"),
   alert: (id: string) => request<ApiAlertView>(`/alerts/${encodeURIComponent(id)}`),
-  runScenario: () => request<ApiAlertView>("/scenarios/run", { method: "POST" }),
+  runScenario: () =>
+    request<ApiAlertView>("/scenarios/run", { method: "POST", timeoutMs: RUN_TIMEOUT_MS }),
   queue: () => request<ApiAuditRecord[]>("/queue"),
   review: (seq: number, body: ApiReviewIn) =>
     request<ApiAuditRecord>(`/queue/${seq}/review`, { method: "POST", body }),

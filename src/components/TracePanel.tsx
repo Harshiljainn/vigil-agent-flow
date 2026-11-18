@@ -1,7 +1,7 @@
 import { Bot, Cpu, ShieldCheck, Terminal } from "lucide-react";
-import { money } from "@/components/bits";
+import { ReasoningBadge, money } from "@/components/bits";
 import type { NodeKind, PipelineNode } from "@/data/system";
-import type { ApiAlertView, ApiSignal } from "@/lib/api";
+import type { ApiAgentReasoning, ApiAlertView, ApiProvenance, ApiSignal } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /** Real trace of one alert through the pipeline, from GET /alerts/{id}. No canned text. */
@@ -51,6 +51,53 @@ function SignalList({ signals }: { signals: ApiSignal[] }) {
   );
 }
 
+const source = (p: ApiProvenance) => ({
+  backend: p.backend,
+  model: p.model,
+  fallback: p.fallback,
+  fallbackReason: p.fallback_reason,
+});
+
+/** Agent-written text (Gemini or rule template), with which backend produced it. */
+function AgentText({
+  title,
+  provenance,
+  children,
+}: {
+  title: string;
+  provenance: ApiProvenance;
+  children: React.ReactNode;
+}) {
+  return (
+    <Section title={title}>
+      <div className="rounded-lg border border-border bg-surface p-3 text-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <ReasoningBadge source={source(provenance)} />
+          {provenance.fallback && provenance.fallback_reason && (
+            <span className="text-muted-foreground">fallback: {provenance.fallback_reason}</span>
+          )}
+          {!provenance.fallback && provenance.fallback_reason && (
+            <span className="text-muted-foreground">{provenance.fallback_reason}</span>
+          )}
+        </div>
+        <div className="mt-2 space-y-1.5">{children}</div>
+      </div>
+    </Section>
+  );
+}
+
+function Votes({ r }: { r: ApiAgentReasoning }) {
+  if (!r.k) return null;
+  const entries = Object.entries(r.votes).sort((a, b) => b[1] - a[1]);
+  return (
+    <p className="font-mono text-xs text-muted-foreground">
+      votes over k={r.k} samples ({r.samples} valid):{" "}
+      {entries.map(([a, n]) => `${a} ${n}/${r.k}`).join(", ") || "none"}
+      {r.agreement !== null && ` · agreement ${pct(r.agreement)}`}
+    </p>
+  );
+}
+
 export function NodeDetail({ node, view }: { node: PipelineNode; view: ApiAlertView }) {
   const Icon = kindIcon(node.kind);
   const a = view.alert;
@@ -83,6 +130,16 @@ export function NodeDetail({ node, view }: { node: PipelineNode; view: ApiAlertV
               <div className="rounded-md bg-surface-2 p-2">grounded = {String(a.grounded)}</div>
             </div>
           </Section>
+          {view.reasoning && (
+            <AgentText title="Synthesizer reasoning" provenance={view.reasoning.synthesizer}>
+              <p className="font-medium">{view.reasoning.summary}</p>
+              <p className="text-muted-foreground">{view.reasoning.reasoning}</p>
+              <p className="font-mono text-xs text-muted-foreground">
+                cited: {view.reasoning.cited_doc_ids.join(", ") || "none"} · confidence is computed
+                by code, not by the LLM
+              </p>
+            </AgentText>
+          )}
           <Section title={`Input signals (${a.signals.length})`}>
             <SignalList signals={a.signals} />
           </Section>
@@ -109,6 +166,13 @@ export function NodeDetail({ node, view }: { node: PipelineNode; view: ApiAlertV
             )}
           </Section>
         </>
+      )}
+
+      {node.id === "strategist" && view.reasoning && (
+        <AgentText title="Strategist rationale" provenance={view.reasoning.strategist}>
+          <p>{view.reasoning.strategist_rationale}</p>
+          <Votes r={view.reasoning} />
+        </AgentText>
       )}
 
       {node.id === "strategist" && (
@@ -146,7 +210,14 @@ export function NodeDetail({ node, view }: { node: PipelineNode; view: ApiAlertV
                       </td>
                       <td className="font-mono">{money(o.cost_usd)}</td>
                       <td className="font-mono">{o.delay_hours}h</td>
-                      <td className="font-mono">{o.confidence}</td>
+                      <td className="font-mono">
+                        {o.confidence}
+                        {o.agreement != null && (
+                          <div className="text-[10px] text-muted-foreground">
+                            agree {pct(o.agreement)}
+                          </div>
+                        )}
+                      </td>
                       <td className={o.reversible ? "text-ok" : "text-destructive"}>
                         {o.reversible ? "yes" : "no"}
                       </td>

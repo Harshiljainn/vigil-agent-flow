@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { useMemo, useState } from "react";
-import { CategoryBadge, PageHeading, money } from "@/components/bits";
+import { CategoryBadge, PageHeading, ReasoningBadge, money } from "@/components/bits";
 import { ACTION_META, CATEGORY_META, type Category, type Decision } from "@/data/vigilai";
-import { sortDecisions, type AuditSortKey } from "@/lib/adapter";
+import { reasoningLabel, sortDecisions, type AuditSortKey } from "@/lib/adapter";
 import { useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/audit")({
@@ -37,6 +37,7 @@ const COLUMNS: { key: AuditSortKey | null; label: string; className?: string }[]
   { key: null, label: "Time" },
   { key: "category", label: "Category" },
   { key: "action", label: "Action" },
+  { key: null, label: "Reasoning" },
   { key: "route", label: "Route" },
   { key: "human", label: "Decided by" },
   { key: "cost", label: "Cost" },
@@ -81,7 +82,7 @@ function Audit() {
 
   const exportCsv = () => {
     const head =
-      "id,alert,time,category,action,backend_action,override_of,route,human,cost,confidence,status,outcome";
+      "id,alert,time,category,action,backend_action,override_of,reasoning,fallback_reason,route,human,cost,confidence,status,outcome";
     const body = rows.map((d) =>
       [
         d.id,
@@ -91,6 +92,8 @@ function Audit() {
         d.action,
         d.backendAction ?? "",
         d.override?.recommended ?? "",
+        d.reasoning ? reasoningLabel(d.reasoning) : "",
+        d.reasoning?.fallbackReason ? `"${d.reasoning.fallbackReason}"` : "",
         d.mode,
         d.human ?? "",
         d.cost,
@@ -242,6 +245,13 @@ function Audit() {
                     <div className="text-xs text-warn" title={d.note}>
                       Override: recommended {d.override.recommended}
                     </div>
+                  )}
+                </td>
+                <td>
+                  {d.reasoning ? (
+                    <ReasoningBadge source={d.reasoning} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
                 <td className="text-xs">{d.mode === "auto" ? "Auto" : "Human review"}</td>

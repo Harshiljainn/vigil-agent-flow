@@ -44,7 +44,7 @@ export const PIPELINE_NODES: PipelineNode[] = [
     name: "Synthesizer",
     kind: "agent",
     built: true,
-    role: "Rule-based: combines supporting signals by source reliability (noisy-OR), lowers confidence for contradicting signals, retrieves the top 3 documents (TF-IDF over 16 hand-written docs) and lowers confidence again if the alert is not grounded. No LLM yet.",
+    role: "Code computes confidence: combines supporting signals by source reliability (noisy-OR), lowers it for contradicting signals, retrieves the top 3 documents (TF-IDF over 16 hand-written docs) and lowers it again if the alert is not grounded. The summary and reasoning text come from Gemini (VIGIL_LLM=gemini) or a rule template (VIGIL_LLM=off).",
     code: "vigilai/agents.py SynthesizerAgent + retrieval.py TfidfRetriever",
   },
   {
@@ -52,7 +52,7 @@ export const PIPELINE_NODES: PipelineNode[] = [
     name: "Strategist",
     kind: "agent",
     built: true,
-    role: "Rule-based: builds one option per catalogue action for the category (knowledge/actions.json), ranks options backed by retrieved documents first, then cheaper ones. The first option is the recommendation. No LLM yet.",
+    role: "Builds one option per catalogue action for the category (knowledge/actions.json); cost, delay and reversibility come from the catalogue. Rule backend: ranks options backed by retrieved documents first, then cheaper ones. Gemini backend: ranks the same catalogue actions k times; the share of samples that agree lowers option confidence when the model is unsure. The first option is the recommendation.",
     code: "vigilai/agents.py StrategistAgent",
   },
   {
@@ -83,7 +83,8 @@ export const BUILT: Component[] = [
   },
   {
     name: "Synthesizer + Strategist",
-    detail: "Rule-based agents (no LLM yet) with typed pydantic inputs and outputs.",
+    detail:
+      "Typed pydantic inputs and outputs; reasoning from Gemini (free tier, cached, rate-limited, budgeted) or the rule-based fallback.",
   },
   {
     name: "Retrieval (RAG baseline)",
@@ -113,7 +114,6 @@ export const BUILT: Component[] = [
 
 /** Parts described in the design but not built yet. */
 export const PLANNED: Component[] = [
-  { name: "LLM agents", detail: "Replace the rule-based Synthesizer and Strategist." },
   { name: "ChromaDB vector store", detail: "Replace TF-IDF retrieval with embeddings." },
   { name: "LangGraph orchestration", detail: "Run the pipeline stages as a graph." },
   {

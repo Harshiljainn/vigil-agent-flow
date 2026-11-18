@@ -102,7 +102,7 @@ function Pipeline() {
     <div>
       <PageHeading
         title="Agent Pipeline & Reasoning Trace"
-        subtitle="Three signal agents query tool servers, a rule-based Synthesizer and Strategist reason over retrieved context, then a deterministic gate decides auto vs human."
+        subtitle="Three signal agents query tool servers, a Synthesizer and Strategist (Gemini or rule-based) reason over retrieved context, then a deterministic gate decides auto vs human."
         actions={
           live ? (
             <div className="flex flex-wrap items-center gap-2">

@@ -1,4 +1,4 @@
-import { ArrowDownRight, ArrowUpRight, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Cpu, ShieldCheck, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import {
   ACTION_META,
@@ -6,6 +6,7 @@ import {
   SEVERITY_META,
   type ActionType,
   type Category,
+  type ReasoningSource,
   type Severity,
   type Status,
 } from "@/data/vigilai";
@@ -98,6 +99,35 @@ export function ReversibleTag({
       }}
     >
       {rev ? "reversible" : "irreversible"}
+    </span>
+  );
+}
+
+/** Which backend wrote the agents' reasoning: Rule, Gemini · model, or a fallback. */
+export function ReasoningBadge({ source }: { source: ReasoningSource }) {
+  const gemini = source.backend === "gemini";
+  const label = gemini
+    ? `Gemini${source.model ? ` · ${source.model}` : ""}${source.fallback ? " (partial fallback)" : ""}`
+    : source.fallback
+      ? "Rule (fallback)"
+      : "Rule";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
+        gemini ? "text-primary" : source.fallback ? "text-warn" : "text-muted-foreground",
+      )}
+      style={{
+        backgroundColor: gemini
+          ? "color-mix(in oklab, var(--primary) 14%, transparent)"
+          : source.fallback
+            ? "color-mix(in oklab, var(--warn) 14%, transparent)"
+            : "var(--surface-2)",
+      }}
+      title={source.fallbackReason ? `Fallback: ${source.fallbackReason}` : undefined}
+    >
+      {gemini ? <Sparkles className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
+      {label}
     </span>
   );
 }

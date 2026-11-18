@@ -780,6 +780,16 @@ export type Decision = {
   reversible?: boolean;
   /** Live data only: the gate's route for this decision. */
   route?: "auto_execute" | "human_review";
+  /** Live data only: which reasoning backend produced the agents' output. */
+  reasoning?: ReasoningSource;
+};
+
+/** Which backend wrote the Synthesizer/Strategist reasoning (live data only). */
+export type ReasoningSource = {
+  backend: "rule" | "gemini";
+  model: string | null;
+  fallback: boolean;
+  fallbackReason: string | null;
 };
 
 // Deterministic pseudo-random generator so the seeded history never shifts.

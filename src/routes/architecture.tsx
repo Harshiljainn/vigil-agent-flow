@@ -12,7 +12,7 @@ export const Route = createFileRoute("/architecture")({
       {
         name: "description",
         content:
-          "What VigilAI is built from today — tool servers, rule-based agents, TF-IDF retrieval, a deterministic Decision Gate — and what is planned.",
+          "What VigilAI is built from today — tool servers, Synthesizer and Strategist agents (Gemini or rule-based), TF-IDF retrieval, a deterministic Decision Gate — and what is planned.",
       },
       { property: "og:title", content: "System Architecture — VigilAI" },
       {
@@ -40,8 +40,8 @@ const LAYERS = [
   {
     icon: Bot,
     title: "3. Synthesizer & Strategist",
-    status: "simulated",
-    body: "Rule-based agents fuse signals into a confidence-scored alert and rank mitigation options from an action catalogue. LLM versions are planned.",
+    status: "built",
+    body: "Agents fuse signals into a confidence-scored alert (confidence computed by code) and rank mitigation options from an action catalogue. Gemini writes the reasoning and ranking when VIGIL_LLM=gemini; otherwise rules do, and any Gemini failure falls back to rules.",
   },
   {
     icon: ShieldCheck,

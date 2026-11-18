@@ -21,6 +21,7 @@ import type {
   Decision,
   Evidence,
   MitigationOption,
+  ReasoningSource,
   Status,
 } from "../data/vigilai";
 
@@ -205,8 +206,27 @@ export function toDecisions(audit: ApiAuditRecord[]): Decision[] {
         d.override = { recommended: review.recommended_action ?? g.action, chosen: review.action };
       }
       if (review?.note) d.note = review.note;
+      d.reasoning = toReasoningSource(g);
       return d;
     });
+}
+
+// ---------- reasoning provenance ----------
+
+/** Audit record -> which backend produced the reasoning. Old records without the fields are rule. */
+export function toReasoningSource(r: ApiAuditRecord): ReasoningSource {
+  return {
+    backend: r.llm_backend ?? "rule",
+    model: r.llm_model ?? null,
+    fallback: r.llm_fallback ?? false,
+    fallbackReason: r.fallback_reason ?? null,
+  };
+}
+
+/** Short display label: "Rule", "Gemini · model", or "Rule (fallback)". */
+export function reasoningLabel(s: ReasoningSource): string {
+  if (s.backend === "gemini") return s.model ? `Gemini · ${s.model}` : "Gemini";
+  return s.fallback ? "Rule (fallback)" : "Rule";
 }
 
 // ---------- thresholds ----------
