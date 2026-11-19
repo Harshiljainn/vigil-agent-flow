@@ -173,6 +173,7 @@ export function toAlert(v: ApiAlertView): Alert {
     gateReasons: v.decision.reasons,
     route: v.decision.route,
     origin: a.origin ?? "synthetic",
+    ...(toAlertReasoning(v) ? { reasoning: toAlertReasoning(v) } : {}),
     ...(a.location ? { location: a.location } : {}),
     ...(a.failed_servers?.length ? { failedServers: a.failed_servers } : {}),
   };
@@ -238,10 +239,28 @@ export function toReasoningSource(r: ApiAuditRecord): ReasoningSource {
   };
 }
 
-/** Short display label: "Rule", "Gemini · model", or "Rule (fallback)". */
+/** Short display label: "Gemini · model", "Gemini unavailable — rule fallback (reason)" or "Seed — rule based". */
 export function reasoningLabel(s: ReasoningSource): string {
-  if (s.backend === "gemini") return s.model ? `Gemini · ${s.model}` : "Gemini";
-  return s.fallback ? "Rule (fallback)" : "Rule";
+  if (s.backend === "gemini")
+    return `${s.model ? `Gemini · ${s.model}` : "Gemini"}${s.fallback ? " (partial fallback)" : ""}`;
+  if (s.fallback) return `Gemini unavailable — rule fallback (${s.fallbackReason ?? "no reason"})`;
+  // since Stage 11 every new alert tries Gemini, so a rule result without a fallback is a seed alert
+  return "Seed — rule based";
+}
+
+/** Alert view -> reasoning source: Gemini if any agent used it; else fallback if any fell back. */
+export function toAlertReasoning(v: ApiAlertView): ReasoningSource | undefined {
+  const r = v.reasoning;
+  if (!r) return undefined;
+  const provs = [r.synthesizer, r.strategist];
+  const fb = provs.filter((p) => p.fallback);
+  const reasons = [...new Set(fb.map((p) => p.fallback_reason).filter(Boolean))];
+  return {
+    backend: provs.some((p) => p.backend === "gemini") ? "gemini" : "rule",
+    model: provs.find((p) => p.model)?.model ?? null,
+    fallback: fb.length > 0,
+    fallbackReason: reasons.length ? reasons.join("; ") : null,
+  };
 }
 
 // ---------- thresholds ----------

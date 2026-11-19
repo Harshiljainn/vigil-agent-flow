@@ -1,27 +1,31 @@
 /**
- * Pure helpers for the website's "Fetch live signals" and "Use Gemini AI" controls.
+ * Pure helpers for the website's "Fetch live signals" control and the Gemini quota line.
  * Everything shown comes from the backend responses (/llm/status, /signals/live/run,
  * /scenarios/run); nothing is computed or invented here. Tested in webrun.test.ts.
  */
 import type { ApiAgentReasoning, ApiLiveRun, ApiLlmStatus } from "./api";
 
-export type GeminiSwitchState = {
-  disabled: boolean;
-  /** "Gemini: N calls left today", or why the switch is off. */
+export type GeminiQuota = {
+  /** True when new alerts will use the rule fallback (no key, or budget used up). */
+  unavailable: boolean;
+  /** "Gemini: N calls left today", or why new alerts fall back to rules. */
   label: string;
 };
 
-export function geminiSwitchState(llm: ApiLlmStatus | null): GeminiSwitchState {
-  if (llm === null) return { disabled: true, label: "Gemini: checking…" };
+export function geminiQuota(llm: ApiLlmStatus | null): GeminiQuota {
+  if (llm === null) return { unavailable: false, label: "Gemini: checking…" };
   if (llm.reason === "no_key")
-    return { disabled: true, label: "Gemini unavailable: no API key on the server" };
+    return {
+      unavailable: true,
+      label: "Gemini unavailable — rule fallback (no API key on the server)",
+    };
   if (llm.reason === "budget_used")
     return {
-      disabled: true,
-      label: `Gemini daily budget used up (${llm.calls_today} of ${llm.daily_budget} calls); resets at 00:00 UTC`,
+      unavailable: true,
+      label: `Gemini unavailable — rule fallback (daily budget used up: ${llm.calls_today} of ${llm.daily_budget} calls; resets 00:00 UTC)`,
     };
   return {
-    disabled: false,
+    unavailable: false,
     label: `Gemini: ${llm.remaining} call${llm.remaining === 1 ? "" : "s"} left today`,
   };
 }
@@ -34,9 +38,7 @@ export function fallbackNotice(r: ApiAgentReasoning | null | undefined): string 
     parts.push(`Synthesizer (${r.synthesizer.fallback_reason ?? "no reason given"})`);
   if (r.strategist.fallback)
     parts.push(`Strategist (${r.strategist.fallback_reason ?? "no reason given"})`);
-  return parts.length
-    ? `Gemini fell back to the rule-based result for: ${parts.join("; ")}.`
-    : null;
+  return parts.length ? `Gemini unavailable — rule fallback for: ${parts.join("; ")}.` : null;
 }
 
 export type LiveRunSummary = {
@@ -83,9 +85,6 @@ export function summarizeLiveRun(run: ApiLiveRun): LiveRunSummary {
       run.alerts.length === 0 && failed.length === 0 && report.weather_severe_ports.length === 0,
     cached: run.cached === true,
     nextFetchInS: run.next_fetch_in_s ?? null,
-    geminiFallbacks: {
-      count: run.gemini_used ? count : 0,
-      reasons: run.gemini_used ? [...reasons] : [],
-    },
+    geminiFallbacks: { count, reasons: [...reasons] },
   };
 }

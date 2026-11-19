@@ -6,6 +6,7 @@ import {
   ConfidenceBar,
   delayLabel,
   PageHeading,
+  ReasoningBadge,
   ReversibleTag,
   SeverityDot,
   alertAge,
@@ -104,6 +105,7 @@ function QueueRow({ alert }: { alert: Alert }) {
         <SeverityDot severity={alert.severity} withLabel={false} />
         <CategoryBadge category={alert.category} />
         <span className="font-mono text-xs text-muted-foreground">{alert.id}</span>
+        {alert.reasoning && <ReasoningBadge source={alert.reasoning} />}
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{alert.summary}</span>
         <span className="hidden font-mono text-xs text-muted-foreground md:inline">
           {money(recommended.cost)} · {alert.confidence}% · {alertAge(alert)}

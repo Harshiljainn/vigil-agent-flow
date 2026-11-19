@@ -257,7 +257,6 @@ export type ApiLiveRun = {
   /** True inside the 60 s cooldown: the last result again, no new alerts. */
   cached?: boolean;
   next_fetch_in_s?: number | null;
-  gemini_used?: boolean;
 };
 
 /** GET /llm/status. The key is never returned. */
@@ -557,18 +556,11 @@ export const api = {
     request<ApiHealth>("/health", timeoutMs !== undefined ? { timeoutMs } : {}),
   alerts: () => request<ApiAlertView[]>("/alerts"),
   alert: (id: string) => request<ApiAlertView>(`/alerts/${encodeURIComponent(id)}`),
-  runScenario: (useGemini = false) =>
-    request<ApiAlertView>("/scenarios/run", {
-      method: "POST",
-      body: { use_gemini: useGemini },
-      timeoutMs: RUN_TIMEOUT_MS,
-    }),
-  runLiveSignals: (useGemini = false) =>
-    request<ApiLiveRun>("/signals/live/run", {
-      method: "POST",
-      body: { use_gemini: useGemini },
-      timeoutMs: LIVE_TIMEOUT_MS,
-    }),
+  // new alerts always try Gemini on the server (rule fallback with a recorded reason)
+  runScenario: () =>
+    request<ApiAlertView>("/scenarios/run", { method: "POST", timeoutMs: RUN_TIMEOUT_MS }),
+  runLiveSignals: () =>
+    request<ApiLiveRun>("/signals/live/run", { method: "POST", timeoutMs: LIVE_TIMEOUT_MS }),
   llmStatus: () => request<ApiLlmStatus>("/llm/status"),
   queue: () => request<ApiAuditRecord[]>("/queue"),
   review: (seq: number, body: ApiReviewIn) =>

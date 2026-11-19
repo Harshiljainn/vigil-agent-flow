@@ -104,6 +104,8 @@ export type Alert = {
   route?: "auto_execute" | "human_review";
   /** Backend data only: "live" = built from real MCP signals, "synthetic" = generated scenario. */
   origin?: "live" | "synthetic";
+  /** Live data only: which backend reasoned about this alert (Gemini, rule fallback, seed). */
+  reasoning?: ReasoningSource;
   /** Live-signal alerts: the monitored port or lane. */
   location?: string;
   /** Live-signal alerts: MCP servers that failed during the fetch. */

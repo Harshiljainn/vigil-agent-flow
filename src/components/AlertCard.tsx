@@ -7,6 +7,7 @@ import {
   delayLabel,
   GroundedBadge,
   OriginBadge,
+  ReasoningBadge,
   ReversibleTag,
   SeverityDot,
   StatusPill,
@@ -28,6 +29,7 @@ export function AlertCard({ alert, compact }: { alert: Alert; compact?: boolean 
         <SeverityDot severity={alert.severity} />
         <span className="font-mono text-xs text-muted-foreground">{alert.id}</span>
         {alert.origin && <OriginBadge origin={alert.origin} />}
+        {alert.reasoning && <ReasoningBadge source={alert.reasoning} />}
         <span className="text-xs text-muted-foreground" title={formatDateTime(alert.createdAt)}>
           · {alertAge(alert)}
         </span>

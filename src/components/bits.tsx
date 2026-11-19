@@ -12,6 +12,7 @@ import {
   type Severity,
   type Status,
 } from "@/data/vigilai";
+import { reasoningLabel } from "@/lib/adapter";
 import { cn } from "@/lib/utils";
 
 export function CategoryBadge({ category }: { category: Category }) {
@@ -108,11 +109,7 @@ export function ReversibleTag({
 /** Which backend wrote the agents' reasoning: Rule, Gemini · model, or a fallback. */
 export function ReasoningBadge({ source }: { source: ReasoningSource }) {
   const gemini = source.backend === "gemini";
-  const label = gemini
-    ? `Gemini${source.model ? ` · ${source.model}` : ""}${source.fallback ? " (partial fallback)" : ""}`
-    : source.fallback
-      ? "Rule (fallback)"
-      : "Rule";
+  const label = reasoningLabel(source);
   return (
     <span
       className={cn(
@@ -126,7 +123,7 @@ export function ReasoningBadge({ source }: { source: ReasoningSource }) {
             ? "color-mix(in oklab, var(--warn) 14%, transparent)"
             : "var(--surface-2)",
       }}
-      title={source.fallbackReason ? `Fallback: ${source.fallbackReason}` : undefined}
+      title={source.fallbackReason ? `Gemini unavailable: ${source.fallbackReason}` : undefined}
     >
       {gemini ? <Sparkles className="h-3 w-3" /> : <Cpu className="h-3 w-3" />}
       {label}

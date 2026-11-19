@@ -1,7 +1,7 @@
-// Gemini switch and live-fetch summary helpers. Run with: bun test
+// Gemini quota and live-fetch summary helpers. Run with: bun test
 import { describe, expect, test } from "bun:test";
 import type { ApiAgentReasoning, ApiAlertView, ApiLiveRun, ApiLlmStatus } from "./api";
-import { fallbackNotice, geminiSwitchState, summarizeLiveRun } from "./webrun";
+import { fallbackNotice, geminiQuota, summarizeLiveRun } from "./webrun";
 
 const llm = (o: Partial<ApiLlmStatus>): ApiLlmStatus => ({
   available: true,
@@ -13,22 +13,22 @@ const llm = (o: Partial<ApiLlmStatus>): ApiLlmStatus => ({
   ...o,
 });
 
-describe("geminiSwitchState", () => {
-  test("enabled with calls left", () => {
-    expect(geminiSwitchState(llm({}))).toEqual({
-      disabled: false,
+describe("geminiQuota", () => {
+  test("shows the calls left", () => {
+    expect(geminiQuota(llm({}))).toEqual({
+      unavailable: false,
       label: "Gemini: 16 calls left today",
     });
-    expect(geminiSwitchState(llm({ remaining: 1 })).label).toBe("Gemini: 1 call left today");
+    expect(geminiQuota(llm({ remaining: 1 })).label).toBe("Gemini: 1 call left today");
   });
-  test("disabled with the reason", () => {
-    const k = geminiSwitchState(llm({ available: false, reason: "no_key", remaining: 20 }));
-    expect(k.disabled).toBe(true);
-    expect(k.label).toContain("no API key");
-    const b = geminiSwitchState(llm({ available: false, reason: "budget_used", remaining: 0 }));
-    expect(b.disabled).toBe(true);
+  test("says new alerts use the rule fallback, with the reason", () => {
+    const k = geminiQuota(llm({ available: false, reason: "no_key", remaining: 20 }));
+    expect(k.unavailable).toBe(true);
+    expect(k.label).toBe("Gemini unavailable — rule fallback (no API key on the server)");
+    const b = geminiQuota(llm({ available: false, reason: "budget_used", remaining: 0 }));
+    expect(b.unavailable).toBe(true);
     expect(b.label).toContain("4 of 20");
-    expect(geminiSwitchState(null).disabled).toBe(true);
+    expect(geminiQuota(null).label).toBe("Gemini: checking…");
   });
 });
 
@@ -59,6 +59,7 @@ describe("fallbackNotice", () => {
   });
   test("names the agent and the reason", () => {
     const n = fallbackNotice(reasoning(prov(false), prov(true, "time_limit")));
+    expect(n).toContain("Gemini unavailable — rule fallback");
     expect(n).toContain("Strategist (time_limit)");
     expect(n).not.toContain("Synthesizer");
   });
@@ -126,13 +127,12 @@ describe("summarizeLiveRun", () => {
     expect(s.cached).toBe(true);
     expect(s.nextFetchInS).toBe(30);
   });
-  test("counts Gemini fallbacks only for Gemini runs", () => {
+  test("counts alerts whose Gemini reasoning fell back, with the reasons", () => {
     const alerts = [
       view(reasoning(prov(false), prov(true, "time_limit"))),
       view(reasoning(prov(false), prov(false))),
     ];
-    const g = summarizeLiveRun(run({ alerts, gemini_used: true }));
+    const g = summarizeLiveRun(run({ alerts }));
     expect(g.geminiFallbacks).toEqual({ count: 1, reasons: ["time_limit"] });
-    expect(summarizeLiveRun(run({ alerts })).geminiFallbacks.count).toBe(0);
   });
 });

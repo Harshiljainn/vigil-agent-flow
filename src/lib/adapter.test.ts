@@ -14,6 +14,7 @@ import {
   sortDecisions,
   sweepPointAt,
   toActionType,
+  toAlertReasoning,
   toAlert,
   toCategory,
   toDecisions,
@@ -456,7 +457,7 @@ describe("reasoning provenance (Stage 4)", () => {
   test("records without LLM fields are rule-based", () => {
     const src = toReasoningSource(rec({ seq: 1 }));
     expect(src).toEqual({ backend: "rule", model: null, fallback: false, fallbackReason: null });
-    expect(reasoningLabel(src)).toBe("Rule");
+    expect(reasoningLabel(src)).toBe("Seed — rule based");
   });
 
   test("gemini and fallback records keep backend, model and reason", () => {
@@ -478,8 +479,30 @@ describe("reasoning provenance (Stage 4)", () => {
         fallback_reason: "synthesizer: budget_exhausted; strategist: budget_exhausted",
       }),
     );
-    expect(reasoningLabel(fb)).toBe("Rule (fallback)");
+    expect(reasoningLabel(fb)).toBe(
+      "Gemini unavailable — rule fallback (synthesizer: budget_exhausted; strategist: budget_exhausted)",
+    );
     expect(fb.fallbackReason).toContain("budget_exhausted");
+  });
+
+  test("toAlertReasoning: gemini, fallback with reason, and none", () => {
+    const p = (backend: "rule" | "gemini", fallback: boolean, reason: string | null = null) => ({
+      backend,
+      model: "m",
+      fallback,
+      fallback_reason: reason,
+    });
+    const v = (s: ReturnType<typeof p>, t: ReturnType<typeof p>) =>
+      ({ reasoning: { synthesizer: s, strategist: t } }) as unknown as Parameters<
+        typeof toAlertReasoning
+      >[0];
+    const g = toAlertReasoning(v(p("gemini", false), p("gemini", false)))!;
+    expect(reasoningLabel(g)).toBe("Gemini · m");
+    const fb = toAlertReasoning(v(p("rule", true, "no_key"), p("rule", true, "no_key")))!;
+    expect(reasoningLabel(fb)).toBe("Gemini unavailable — rule fallback (no_key)");
+    const seed = toAlertReasoning(v(p("rule", false), p("rule", false)))!;
+    expect(reasoningLabel(seed)).toBe("Seed — rule based");
+    expect(toAlertReasoning({ reasoning: null } as never)).toBeUndefined();
   });
 
   test("toDecisions attaches the gate record's provenance", () => {

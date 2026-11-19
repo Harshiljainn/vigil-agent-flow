@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { AlertCard } from "@/components/AlertCard";
 import { PageHeading, formatDateTime } from "@/components/bits";
-import { GeminiSwitch } from "@/components/GeminiSwitch";
+import { GeminiQuota } from "@/components/GeminiQuota";
 import { CATEGORY_META, SEVERITY_META, type Category, type Severity } from "@/data/vigilai";
 import { api, type ApiLiveRun } from "@/lib/api";
 import { summarizeLiveRun } from "@/lib/webrun";
@@ -33,18 +33,14 @@ const selectCls =
   "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-primary";
 
 function AlertFeed() {
-  const { alerts, mode, refresh, refreshLlm, canOperate, llm } = useVigil();
+  const { alerts, mode, refresh, refreshLlm, canOperate } = useVigil();
   const [fetching, setFetching] = useState(false);
-  const [fetchWithGemini, setFetchWithGemini] = useState(false);
-  const [useGemini, setUseGemini] = useState(false);
   const [lastRun, setLastRun] = useState<ApiLiveRun | null>(null);
 
   const fetchLive = async () => {
-    const gemini = useGemini && llm?.available === true;
     setFetching(true);
-    setFetchWithGemini(gemini);
     try {
-      const run = await api.runLiveSignals(gemini);
+      const run = await api.runLiveSignals();
       setLastRun(run);
       const s = summarizeLiveRun(run);
       if (s.cached)
@@ -89,7 +85,7 @@ function AlertFeed() {
         actions={
           mode === "live" ? (
             <div className="flex flex-wrap items-center gap-2">
-              <GeminiSwitch checked={useGemini} onChange={setUseGemini} busy={fetching} />
+              <GeminiQuota />
               <button
                 onClick={() => void fetchLive()}
                 disabled={fetching || !canOperate}
@@ -102,9 +98,7 @@ function AlertFeed() {
               >
                 <Radio className="h-4 w-4" />
                 {fetching
-                  ? fetchWithGemini
-                    ? "Fetching live signals… Gemini is reasoning (up to 2 minutes)"
-                    : "Fetching live signals… (up to a minute)"
+                  ? "Fetching live signals… Gemini is reasoning (up to 2 minutes)"
                   : "Fetch live signals"}
               </button>
             </div>
@@ -220,7 +214,7 @@ function LiveRunPanel({ run }: { run: ApiLiveRun }) {
       )}
       {s.geminiFallbacks.count > 0 && (
         <p className="mt-3 text-sm text-warn">
-          Gemini fell back to rules for {s.geminiFallbacks.count} alert(s):{" "}
+          Gemini unavailable — rule fallback for {s.geminiFallbacks.count} alert(s):{" "}
           {s.geminiFallbacks.reasons.join(", ") || "no reason given"}.
         </p>
       )}

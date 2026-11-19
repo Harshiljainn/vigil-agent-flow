@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ArrowRight, Play, ServerOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeading } from "@/components/bits";
-import { GeminiSwitch } from "@/components/GeminiSwitch";
+import { GeminiQuota } from "@/components/GeminiQuota";
 import { NodeDetail, kindIcon } from "@/components/TracePanel";
 import { PIPELINE_NODES, SIGNAL_NODES, type PipelineNode } from "@/data/system";
 import { api, type ApiAlertView } from "@/lib/api";
@@ -35,14 +35,12 @@ function errorText(e: unknown) {
 }
 
 function Pipeline() {
-  const { mode, alerts, refresh, refreshLlm, canOperate, llm } = useVigil();
-  const [useGemini, setUseGemini] = useState(false);
+  const { mode, alerts, refresh, refreshLlm, canOperate } = useVigil();
   const [alertId, setAlertId] = useState<string | null>(null);
   const [view, setView] = useState<ApiAlertView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState("synthesizer");
   const [running, setRunning] = useState(false);
-  const [runWithGemini, setRunWithGemini] = useState(false);
   const live = mode === "live";
 
   // Default to the newest alert once live data is in.
@@ -71,11 +69,9 @@ function Pipeline() {
   }, [live, alertId, view]);
 
   const runScenario = async () => {
-    const gemini = useGemini && llm?.available === true;
     setRunning(true);
-    setRunWithGemini(gemini);
     try {
-      const v = await api.runScenario(gemini);
+      const v = await api.runScenario();
       setView(v);
       setAlertId(v.alert.id);
       setSelected("gate");
@@ -83,7 +79,7 @@ function Pipeline() {
         `${v.alert.id} ran through the pipeline: ${v.decision.route === "auto_execute" ? "auto-executed (simulated)" : "escalated to human review"}`,
       );
       const fb = fallbackNotice(v.reasoning);
-      if (gemini && fb) toast.warning(fb);
+      if (fb) toast.warning(fb);
       await refresh();
     } catch (e) {
       toast.error(`Run failed: ${errorText(e)}`);
@@ -111,7 +107,7 @@ function Pipeline() {
     <div>
       <PageHeading
         title="Agent Pipeline & Reasoning Trace"
-        subtitle="Three signal agents query tool servers, a Synthesizer and Strategist (Gemini or rule-based) reason over retrieved context, then a deterministic gate decides auto vs human."
+        subtitle="Three signal agents query tool servers, a Synthesizer and Strategist (Gemini, with a rule fallback if it is unavailable) reason over retrieved context, then a deterministic gate decides auto vs human."
         actions={
           live ? (
             <div className="flex flex-wrap items-center gap-2">
@@ -127,18 +123,14 @@ function Pipeline() {
                   </option>
                 ))}
               </select>
-              <GeminiSwitch checked={useGemini} onChange={setUseGemini} busy={running} />
+              <GeminiQuota />
               <button
                 onClick={() => void runScenario()}
                 disabled={running || !canOperate}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 <Play className="h-4 w-4" />
-                {running
-                  ? runWithGemini
-                    ? "Gemini is reasoning… (can take 30 s)"
-                    : "Running…"
-                  : "Run new scenario"}
+                {running ? "Gemini is reasoning… (can take 30 s)" : "Run new scenario"}
               </button>
             </div>
           ) : undefined
