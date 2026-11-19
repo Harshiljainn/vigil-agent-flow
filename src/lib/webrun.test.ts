@@ -1,36 +1,7 @@
-// Gemini quota and live-fetch summary helpers. Run with: bun test
+// Live-fetch summary helpers. Run with: bun test
 import { describe, expect, test } from "bun:test";
-import type { ApiAgentReasoning, ApiAlertView, ApiLiveRun, ApiLlmStatus } from "./api";
-import { fallbackNotice, geminiQuota, summarizeLiveRun } from "./webrun";
-
-const llm = (o: Partial<ApiLlmStatus>): ApiLlmStatus => ({
-  available: true,
-  reason: "ok",
-  model: "m",
-  calls_today: 4,
-  daily_budget: 20,
-  remaining: 16,
-  ...o,
-});
-
-describe("geminiQuota", () => {
-  test("shows the calls left", () => {
-    expect(geminiQuota(llm({}))).toEqual({
-      unavailable: false,
-      label: "Gemini: 16 calls left today",
-    });
-    expect(geminiQuota(llm({ remaining: 1 })).label).toBe("Gemini: 1 call left today");
-  });
-  test("says new alerts use the rule fallback, with the reason", () => {
-    const k = geminiQuota(llm({ available: false, reason: "no_key", remaining: 20 }));
-    expect(k.unavailable).toBe(true);
-    expect(k.label).toBe("Gemini unavailable — rule fallback (no API key on the server)");
-    const b = geminiQuota(llm({ available: false, reason: "budget_used", remaining: 0 }));
-    expect(b.unavailable).toBe(true);
-    expect(b.label).toContain("4 of 20");
-    expect(geminiQuota(null).label).toBe("Gemini: checking…");
-  });
-});
+import type { ApiAgentReasoning, ApiAlertView, ApiLiveRun } from "./api";
+import { fallbackNotice, summarizeLiveRun } from "./webrun";
 
 const prov = (fallback: boolean, reason: string | null = null) => ({
   backend: "gemini" as const,

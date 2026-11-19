@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ArrowRight, Play, ServerOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeading } from "@/components/bits";
-import { GeminiQuota } from "@/components/GeminiQuota";
 import { NodeDetail, kindIcon } from "@/components/TracePanel";
 import { PIPELINE_NODES, SIGNAL_NODES, type PipelineNode } from "@/data/system";
 import { api, type ApiAlertView } from "@/lib/api";
@@ -35,7 +34,7 @@ function errorText(e: unknown) {
 }
 
 function Pipeline() {
-  const { mode, alerts, refresh, refreshLlm, canOperate } = useVigil();
+  const { mode, alerts, refresh, canOperate } = useVigil();
   const [alertId, setAlertId] = useState<string | null>(null);
   const [view, setView] = useState<ApiAlertView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -85,7 +84,6 @@ function Pipeline() {
       toast.error(`Run failed: ${errorText(e)}`);
     } finally {
       setRunning(false);
-      void refreshLlm();
     }
   };
 
@@ -123,7 +121,6 @@ function Pipeline() {
                   </option>
                 ))}
               </select>
-              <GeminiQuota />
               <button
                 onClick={() => void runScenario()}
                 disabled={running || !canOperate}

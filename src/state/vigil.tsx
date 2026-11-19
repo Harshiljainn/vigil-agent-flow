@@ -27,7 +27,6 @@ import {
   setAuthToken,
   setUnauthorizedHandler,
   type ApiHealth,
-  type ApiLlmStatus,
   type ApiUser,
 } from "@/lib/api";
 import {
@@ -63,9 +62,6 @@ type VigilState = {
   applyThresholds: () => Promise<boolean>;
   /** Re-fetch everything from the backend now. */
   refresh: () => Promise<void>;
-  /** GET /llm/status (Gemini key present, calls left today); null until loaded or in demo mode. */
-  llm: ApiLlmStatus | null;
-  refreshLlm: () => Promise<void>;
   approve: (alertId: string, optionId: string) => Promise<void>;
   reject: (alertId: string) => Promise<void>;
   /** Alert id currently being reviewed (request in flight). */
@@ -338,20 +334,6 @@ export function VigilProvider({ children }: { children: ReactNode }) {
   const canReview = mode === "demo" || user?.role === "reviewer";
   const canOperate = mode === "demo" || user !== null;
 
-  const [llm, setLlm] = useState<ApiLlmStatus | null>(null);
-  const refreshLlm = useCallback(async () => {
-    try {
-      setLlm(await api.llmStatus());
-    } catch {
-      setLlm(null);
-    }
-  }, []);
-  const loggedIn = user !== null;
-  useEffect(() => {
-    if (isLive && loggedIn) void refreshLlm();
-    else setLlm(null);
-  }, [isLive, loggedIn, refreshLlm]);
-
   const review = useCallback(
     async (alertId: string, verdict: "approve" | "reject", optionId: string | null) => {
       if (!isLive) {
@@ -480,8 +462,6 @@ export function VigilProvider({ children }: { children: ReactNode }) {
     serverThresholds: isLive ? live.serverThresholds : null,
     applyThresholds,
     refresh: sync,
-    llm,
-    refreshLlm,
     approve,
     reject,
     busyAlertId,

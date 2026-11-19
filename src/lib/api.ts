@@ -259,14 +259,17 @@ export type ApiLiveRun = {
   next_fetch_in_s?: number | null;
 };
 
-/** GET /llm/status. The key is never returned. */
+/** GET /llm/status (debugging only; the UI does not show it). The key is never returned. */
 export type ApiLlmStatus = {
   available: boolean;
-  reason: "ok" | "no_key" | "budget_used";
+  reason: "ok" | "no_key" | "budget_used" | "quota_exhausted";
   model: string;
   calls_today: number;
-  daily_budget: number;
-  remaining: number;
+  /** App-side daily cap; null = no limit. */
+  daily_budget: number | null;
+  remaining: number | null;
+  /** Google's own per-day quota was reached. */
+  quota_exhausted: boolean;
 };
 
 export type ApiRetrieverName = "tfidf" | "chroma" | "hybrid";

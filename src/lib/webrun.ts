@@ -1,34 +1,9 @@
 /**
- * Pure helpers for the website's "Fetch live signals" control and the Gemini quota line.
- * Everything shown comes from the backend responses (/llm/status, /signals/live/run,
+ * Pure helpers for the website's "Fetch live signals" control.
+ * Everything shown comes from the backend responses (/signals/live/run,
  * /scenarios/run); nothing is computed or invented here. Tested in webrun.test.ts.
  */
-import type { ApiAgentReasoning, ApiLiveRun, ApiLlmStatus } from "./api";
-
-export type GeminiQuota = {
-  /** True when new alerts will use the rule fallback (no key, or budget used up). */
-  unavailable: boolean;
-  /** "Gemini: N calls left today", or why new alerts fall back to rules. */
-  label: string;
-};
-
-export function geminiQuota(llm: ApiLlmStatus | null): GeminiQuota {
-  if (llm === null) return { unavailable: false, label: "Gemini: checking…" };
-  if (llm.reason === "no_key")
-    return {
-      unavailable: true,
-      label: "Gemini unavailable — rule fallback (no API key on the server)",
-    };
-  if (llm.reason === "budget_used")
-    return {
-      unavailable: true,
-      label: `Gemini unavailable — rule fallback (daily budget used up: ${llm.calls_today} of ${llm.daily_budget} calls; resets 00:00 UTC)`,
-    };
-  return {
-    unavailable: false,
-    label: `Gemini: ${llm.remaining} call${llm.remaining === 1 ? "" : "s"} left today`,
-  };
-}
+import type { ApiAgentReasoning, ApiLiveRun } from "./api";
 
 /** Fallback to rules (Synthesizer and/or Strategist), with the backend's reason; null if none. */
 export function fallbackNotice(r: ApiAgentReasoning | null | undefined): string | null {

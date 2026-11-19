@@ -4,7 +4,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { AlertCard } from "@/components/AlertCard";
 import { PageHeading, formatDateTime } from "@/components/bits";
-import { GeminiQuota } from "@/components/GeminiQuota";
 import { CATEGORY_META, SEVERITY_META, type Category, type Severity } from "@/data/vigilai";
 import { api, type ApiLiveRun } from "@/lib/api";
 import { summarizeLiveRun } from "@/lib/webrun";
@@ -33,7 +32,7 @@ const selectCls =
   "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-primary";
 
 function AlertFeed() {
-  const { alerts, mode, refresh, refreshLlm, canOperate } = useVigil();
+  const { alerts, mode, refresh, canOperate } = useVigil();
   const [fetching, setFetching] = useState(false);
   const [lastRun, setLastRun] = useState<ApiLiveRun | null>(null);
 
@@ -60,7 +59,6 @@ function AlertFeed() {
       toast.error(`Live fetch failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setFetching(false);
-      void refreshLlm();
     }
   };
   const [category, setCategory] = useState<Category | "all">("all");
@@ -85,7 +83,6 @@ function AlertFeed() {
         actions={
           mode === "live" ? (
             <div className="flex flex-wrap items-center gap-2">
-              <GeminiQuota />
               <button
                 onClick={() => void fetchLive()}
                 disabled={fetching || !canOperate}
