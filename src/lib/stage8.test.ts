@@ -1,8 +1,15 @@
 // Stage 8: independent evaluation (labels from two AI models, LLM-as-judge, not humans).
 // Run with: bun test
 import { describe, expect, test } from "bun:test";
-import { aiEvalRows, caseTypeLabel, fmtKappa, isAiEvaluation } from "./adapter";
-import type { ApiAiEvalScores, ApiAiEvaluation } from "./api";
+import {
+  aiCompareRows,
+  aiEvalRows,
+  caseTypeLabel,
+  fmtKappa,
+  isAiEvaluation,
+  isAiGeminiEvaluation,
+} from "./adapter";
+import type { ApiAiEvalScores, ApiAiEvaluation, ApiAiGeminiEvaluation } from "./api";
 
 const scores = (x: number): ApiAiEvalScores => ({
   n: 10,
@@ -66,5 +73,38 @@ describe("independent evaluation adapter", () => {
     expect(caseTypeLabel("best_option_expensive_or_irreversible")).toBe(
       "Best option expensive or irreversible",
     );
+  });
+});
+
+describe("Stage 8b: rule vs Gemini Strategist", () => {
+  const gem = {
+    about: "t",
+    system: { model: "m", k: 1, agreement_factor: "none (k=1)", reasoning_backend: "gemini" },
+    run: { model: "m", calls_used: 80, cache_hits: 0, max_calls: 90, scenarios: 80, fallbacks: 0 },
+    by_case_type: {},
+    comparison: {
+      note: "n",
+      agreed_set: {
+        n: 50,
+        rule: { gate: scores(0.4), confidence_only: scores(0.4) },
+        gemini: { gate: scores(0.5), confidence_only: scores(0.5) },
+      },
+      action_accuracy_action_agreed: { n: 67, rule: 0.4, gemini: 0.5 },
+      ambiguous_set: { rule: { n: 30 }, gemini: { n: 30 } },
+      scenarios_where_gemini_action_differs_from_rule: 10,
+      by_category: {},
+    },
+  } as ApiAiGeminiEvaluation;
+
+  test("accepts a full result and rejects a partial one", () => {
+    expect(isAiGeminiEvaluation(gem)).toBe(true);
+    expect(isAiGeminiEvaluation({ ...gem, run: undefined })).toBe(false);
+    expect(isAiGeminiEvaluation(null)).toBe(false);
+  });
+
+  test("compare rows are in percent, rule first", () => {
+    const rows = aiCompareRows(gem.comparison);
+    expect(rows[0]).toEqual({ metric: "Action accuracy", rule: 40, gemini: 50 });
+    expect(rows).toHaveLength(5);
   });
 });

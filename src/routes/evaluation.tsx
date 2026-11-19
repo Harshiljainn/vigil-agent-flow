@@ -20,6 +20,7 @@ import {
   ApiError,
   api,
   type ApiAiEvaluation,
+  type ApiAiGeminiEvaluation,
   type ApiCategory,
   type ApiEvalMetrics,
   type ApiEvaluation,
@@ -27,10 +28,12 @@ import {
 } from "@/lib/api";
 import {
   RETRIEVERS,
+  aiCompareRows,
   aiEvalRows,
   caseTypeLabel,
   fmtKappa,
   isAiEvaluation,
+  isAiGeminiEvaluation,
   isEvaluation,
   isRetrievalComparison,
   paretoSeries,
@@ -707,6 +710,8 @@ function AiEvalSection() {
             </div>
           </div>
 
+          <GeminiStrategistComparison />
+
           <div className="mt-4 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">Limitations</p>
             <ul className="mt-1 list-disc space-y-1 pl-5">
@@ -715,6 +720,163 @@ function AiEvalSection() {
               ))}
             </ul>
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Stage 8b: results/ai_eval_gemini.json via GET /evaluation/ai/gemini. Rule Strategist vs
+ * Gemini Strategist (k=1, no agreement factor) on the same agreed set and AI labels.
+ */
+function GeminiStrategistComparison() {
+  const [data, setData] = useState<ApiAiGeminiEvaluation | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .aiGeminiEvaluation()
+      .then((raw) => {
+        if (cancelled) return;
+        if (isAiGeminiEvaluation(raw)) setData(raw);
+        else setError("GET /evaluation/ai/gemini returned an unexpected shape.");
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? "results/ai_eval_gemini.json not found. Run `python -m vigilai.ai_eval_gemini` in backend/."
+            : e instanceof Error
+              ? e.message
+              : String(e),
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const c = data?.comparison;
+  const rows = c ? aiCompareRows(c) : [];
+  const amb = c?.ambiguous_set;
+
+  return (
+    <div className="mt-4 rounded-lg border border-border p-3">
+      <p className="text-sm font-medium">Rule Strategist vs Gemini Strategist</p>
+      {error ? (
+        <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+      ) : !data || !c ? (
+        <p className="mt-1 text-sm text-muted-foreground">Loading comparison…</p>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Same scenarios, AI labels, thresholds and Decision Gate; only the Strategist differs.
+            Gemini model {data.run.model}, k={data.system.k} so there is no agreement factor.{" "}
+            {data.run.calls_used} Gemini calls used (budget {data.run.max_calls}),{" "}
+            {data.run.fallbacks} fallbacks to rule. Gemini chose a different action than the rule
+            Strategist in {c.scenarios_where_gemini_action_differs_from_rule} of{" "}
+            {data.run.scenarios} scenarios.
+          </p>
+          <div className="mt-3 grid gap-4 lg:grid-cols-5">
+            <div className="lg:col-span-3">
+              <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                Agreed set (n={c.agreed_set.n}), Decision Gate
+              </p>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={rows} margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="metric"
+                    stroke="var(--muted-foreground)"
+                    fontSize={10}
+                    interval={0}
+                  />
+                  <YAxis domain={[0, 100]} stroke="var(--muted-foreground)" fontSize={11} />
+                  <Tooltip
+                    contentStyle={tt}
+                    cursor={{ fill: "var(--surface-2)" }}
+                    formatter={(v: number, name: string) => [`${v}%`, name]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar
+                    dataKey="rule"
+                    name="Rule Strategist"
+                    fill="var(--primary)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="gemini"
+                    name="Gemini Strategist"
+                    fill="var(--warn)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="lg:col-span-2">
+              <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                Ambiguous set routing (Decision Gate)
+              </p>
+              {amb?.rule.n ? (
+                <p className="text-sm">
+                  Rule escalated{" "}
+                  <span className="font-mono">
+                    {amb.rule.gate_escalated} / {amb.rule.n}
+                  </span>{" "}
+                  · Gemini escalated{" "}
+                  <span className="font-mono">
+                    {amb.gemini.gate_escalated} / {amb.gemini.n}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No ambiguous scenarios.</p>
+              )}
+              <p className="mb-1 mt-3 text-xs font-medium uppercase text-muted-foreground">
+                Action accuracy where the labellers agree on the action (n=
+                {c.action_accuracy_action_agreed.n})
+              </p>
+              <p className="text-sm">
+                Rule <span className="font-mono">{fmt(c.action_accuracy_action_agreed.rule)}%</span>{" "}
+                · Gemini{" "}
+                <span className="font-mono">{fmt(c.action_accuracy_action_agreed.gemini)}%</span>
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 overflow-x-auto">
+            <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+              By category (agreed set): action accuracy
+            </p>
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
+                <tr className="border-b border-border">
+                  <th className="p-2">Category</th>
+                  <th className="pr-2">n agreed</th>
+                  <th className="pr-2">Rule</th>
+                  <th className="pr-2">Gemini</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Object.keys(c.by_category) as ApiCategory[]).map((k) => {
+                  const r = c.by_category[k];
+                  return (
+                    <tr key={k} className="border-b border-border/60">
+                      <td className="p-2">{CATEGORY_META[toCategory(k)].label}</td>
+                      <td className="pr-2 font-mono">{r?.n ?? 0}</td>
+                      <td className="pr-2 font-mono">
+                        {r?.rule.gate ? `${fmt(r.rule.gate.action_accuracy)}%` : "—"}
+                      </td>
+                      <td className="pr-2 font-mono">
+                        {r?.gemini.gate ? `${fmt(r.gemini.gate.action_accuracy)}%` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">{c.note}</p>
         </>
       )}
     </div>

@@ -6,6 +6,7 @@
 import type {
   ApiAiEvalBlock,
   ApiAiEvaluation,
+  ApiAiGeminiEvaluation,
   ApiAlertView,
   ApiAuditRecord,
   ApiCategory,
@@ -432,6 +433,26 @@ export function aiEvalRows(block: ApiAiEvalBlock) {
     metric: label,
     gate: pct1(block.gate[k]),
     baseline: pct1(block.confidence_only[k]),
+  }));
+}
+
+export function isAiGeminiEvaluation(x: unknown): x is ApiAiGeminiEvaluation {
+  const r = x as ApiAiGeminiEvaluation | null;
+  return (
+    !!r &&
+    typeof r === "object" &&
+    typeof r.run?.calls_used === "number" &&
+    typeof r.comparison?.agreed_set?.rule?.gate?.decision_accuracy === "number" &&
+    typeof r.comparison?.agreed_set?.gemini?.gate?.decision_accuracy === "number"
+  );
+}
+
+/** One row per metric: rule Strategist vs Gemini Strategist, Decision Gate, in percent. */
+export function aiCompareRows(c: ApiAiGeminiEvaluation["comparison"]) {
+  return AI_EVAL_METRICS.map(([k, label]) => ({
+    metric: label,
+    rule: pct1(c.agreed_set.rule.gate[k]),
+    gemini: pct1(c.agreed_set.gemini.gate[k]),
   }));
 }
 

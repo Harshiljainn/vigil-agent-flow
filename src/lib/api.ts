@@ -375,6 +375,45 @@ export type ApiAiEvalScores = {
 
 export type ApiAiEvalBlock = { gate: ApiAiEvalScores; confidence_only: ApiAiEvalScores };
 
+export type ApiAiEscalation = {
+  n: number;
+  gate_escalated?: number;
+  gate_escalation_rate?: number;
+  confidence_only_escalated?: number;
+  confidence_only_escalation_rate?: number;
+};
+
+/**
+ * results/ai_eval_gemini.json via GET /evaluation/ai/gemini (Stage 8b): the Gemini Strategist
+ * (k=1, no agreement factor) on the same AI-labelled set, next to the rule Strategist.
+ */
+export type ApiAiGeminiEvaluation = {
+  about: string;
+  system: { model: string; k: number; agreement_factor: string; reasoning_backend: string };
+  run: {
+    model: string;
+    calls_used: number;
+    cache_hits: number;
+    max_calls: number;
+    scenarios: number;
+    fallbacks: number;
+  };
+  by_case_type: Record<string, { n: number; n_ambiguous: number } & Partial<ApiAiEvalBlock>>;
+  comparison: {
+    note: string;
+    agreed_set: { n: number; rule: ApiAiEvalBlock; gemini: ApiAiEvalBlock };
+    action_accuracy_action_agreed: { n: number; rule: number; gemini: number };
+    ambiguous_set: { rule: ApiAiEscalation; gemini: ApiAiEscalation };
+    scenarios_where_gemini_action_differs_from_rule: number;
+    by_category: Partial<
+      Record<
+        ApiCategory,
+        { n: number; rule: Partial<ApiAiEvalBlock>; gemini: Partial<ApiAiEvalBlock> }
+      >
+    >;
+  };
+};
+
 export type ApiAgreement = { n: number; raw_agreement: number | null; kappa: number | null };
 
 export type ApiAgreementPair = { correct_action: ApiAgreement; needs_human_review: ApiAgreement };
@@ -517,6 +556,7 @@ export const api = {
   evaluation: () => request<ApiEvaluation>("/evaluation"),
   retrievalEvaluation: () => request<ApiRetrievalComparison>("/evaluation/retrieval"),
   aiEvaluation: () => request<ApiAiEvaluation>("/evaluation/ai"),
+  aiGeminiEvaluation: () => request<ApiAiGeminiEvaluation>("/evaluation/ai/gemini"),
   kpis: () => request<ApiKpis>("/kpis"),
   login: (username: string, password: string) =>
     request<ApiLogin>("/auth/login", { method: "POST", body: { username, password } }),
