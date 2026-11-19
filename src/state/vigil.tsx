@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { WAKE_MAX_MS, WAKE_NOTICE_MS, WAKE_RETRY_MS } from "@/lib/config";
 import {
   ACTION_META,
   ALERTS,
@@ -45,6 +46,8 @@ export type DataMode = "connecting" | "live" | "demo";
 
 type VigilState = {
   mode: DataMode;
+  /** True when the first /health call has been pending for more than ~2 s (backend waking up). */
+  waking: boolean;
   health: ApiHealth | null;
   alerts: Alert[];
   /** Alerts waiting for a human decision (live: from GET /queue). */
@@ -142,6 +145,9 @@ function writeSession(s: Session | null): void {
 export function VigilProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<DataMode>("connecting");
   const modeRef = useRef<DataMode>("connecting");
+  const [waking, setWaking] = useState(false);
+  const startedAt = useRef(Date.now());
+  const inFlight = useRef(false);
   const [health, setHealth] = useState<ApiHealth | null>(null);
   const [live, setLive] = useState<LiveData | null>(null);
 
@@ -181,10 +187,24 @@ export function VigilProvider({ children }: { children: ReactNode }) {
 
   /** Health check, then (if reachable) a full data refresh. Never throws. */
   const sync = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    try {
+      await syncOnce();
+    } finally {
+      inFlight.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const syncOnce = useCallback(async () => {
     let h: ApiHealth;
     try {
       h = await api.health(HEALTH_TIMEOUT_MS);
     } catch {
+      if (modeRef.current === "connecting" && Date.now() - startedAt.current < WAKE_MAX_MS) {
+        return; // first load: the backend may be waking up, keep retrying before demo mode
+      }
       if (modeRef.current === "live") {
         toast.warning("Backend went offline — showing demo data.", { id: "vigil-sync" });
       }
@@ -210,6 +230,7 @@ export function VigilProvider({ children }: { children: ReactNode }) {
           );
         }
       }
+      setWaking(false);
       setHealth(h);
       setLive(data);
       if (!thresholdsTouched.current) setThresholdsState(data.serverThresholds);
@@ -228,8 +249,23 @@ export function VigilProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void sync();
     const id = window.setInterval(() => void sync(), POLL_MS);
-    return () => window.clearInterval(id);
+    // while the first answer is pending, retry quickly instead of waiting for the 15 s recheck
+    const retry = window.setInterval(() => {
+      if (modeRef.current === "connecting") void sync();
+    }, WAKE_RETRY_MS);
+    const notice = window.setTimeout(() => {
+      if (modeRef.current === "connecting") setWaking(true);
+    }, WAKE_NOTICE_MS);
+    return () => {
+      window.clearInterval(id);
+      window.clearInterval(retry);
+      window.clearTimeout(notice);
+    };
   }, [sync]);
+
+  useEffect(() => {
+    if (mode !== "connecting") setWaking(false);
+  }, [mode]);
 
   const setThresholds = useCallback((t: Partial<Thresholds>) => {
     thresholdsTouched.current = true;
@@ -415,6 +451,7 @@ export function VigilProvider({ children }: { children: ReactNode }) {
 
   const value: VigilState = {
     mode,
+    waking,
     health,
     alerts,
     pendingAlerts,

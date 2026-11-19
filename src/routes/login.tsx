@@ -14,7 +14,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function Login() {
-  const { mode, user, login } = useVigil();
+  const { mode, waking, user, login } = useVigil();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -97,7 +97,13 @@ function Login() {
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <LogIn className="h-4 w-4" />
-              {busy ? "Logging in…" : mode === "connecting" ? "Connecting to backend…" : "Log in"}
+              {busy
+                ? "Logging in…"
+                : mode === "connecting"
+                  ? waking
+                    ? "Waking up the backend (up to 1 minute)…"
+                    : "Connecting to backend…"
+                  : "Log in"}
             </button>
             <p className="text-xs text-muted-foreground">
               Operators can view everything and run scenarios. Reviewers can also approve or reject

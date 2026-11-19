@@ -6,9 +6,9 @@
  * Conversion to the frontend's display shapes happens in src/lib/adapter.ts.
  */
 
-export const API_URL: string = (
-  (import.meta.env["VITE_API_URL"] as string | undefined) || "http://localhost:8000"
-).replace(/\/+$/, "");
+import { API_URL } from "./config";
+
+export { API_URL };
 
 const DEFAULT_TIMEOUT_MS = 5000;
 /** A new run may call Gemini (rate-limited, free tier), so it gets a much longer timeout. */

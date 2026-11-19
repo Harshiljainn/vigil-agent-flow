@@ -33,7 +33,7 @@ const TECH_BADGES = ["LLM Agents", "RAG", "MCP", "Human-in-the-Loop"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
-  const { theme, toggleTheme, kpis, mode, health, user, logout } = useVigil();
+  const { theme, toggleTheme, kpis, mode, waking, health, user, logout } = useVigil();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const onLogin = pathname === "/login";
@@ -154,7 +154,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="flex-1 px-6 py-6">
           {mode === "connecting" || needsLogin ? (
             <p className="panel p-10 text-center text-sm text-muted-foreground">
-              Loading data from the backend…
+              {waking
+                ? "Waking up the backend (up to 1 minute)…"
+                : "Loading data from the backend…"}
             </p>
           ) : (
             children
