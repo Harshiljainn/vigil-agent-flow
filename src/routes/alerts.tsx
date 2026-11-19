@@ -3,9 +3,11 @@ import { Radio, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { AlertCard } from "@/components/AlertCard";
-import { PageHeading } from "@/components/bits";
+import { PageHeading, formatDateTime } from "@/components/bits";
+import { GeminiSwitch } from "@/components/GeminiSwitch";
 import { CATEGORY_META, SEVERITY_META, type Category, type Severity } from "@/data/vigilai";
-import { api } from "@/lib/api";
+import { api, type ApiLiveRun } from "@/lib/api";
+import { summarizeLiveRun } from "@/lib/webrun";
 import { useVigil } from "@/state/vigil";
 
 export const Route = createFileRoute("/alerts")({
@@ -31,29 +33,38 @@ const selectCls =
   "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground outline-none focus:border-primary";
 
 function AlertFeed() {
-  const { alerts, mode, health, refresh } = useVigil();
+  const { alerts, mode, refresh, refreshLlm, canOperate, llm } = useVigil();
   const [fetching, setFetching] = useState(false);
-  const liveSignals = health?.signals === "live";
+  const [fetchWithGemini, setFetchWithGemini] = useState(false);
+  const [useGemini, setUseGemini] = useState(false);
+  const [lastRun, setLastRun] = useState<ApiLiveRun | null>(null);
 
   const fetchLive = async () => {
+    const gemini = useGemini && llm?.available === true;
     setFetching(true);
+    setFetchWithGemini(gemini);
     try {
-      const { alerts: built, report } = await api.runLiveSignals();
-      const n = report.news;
-      const news = n
-        ? `news: ${n.fetched} fetched, ${n.dropped_irrelevant} irrelevant, ${n.dropped_duplicate} duplicate, ${n.signals} signal(s)`
-        : "news: no data";
-      const failed = report.failed_servers.length
-        ? ` · failed: ${report.failed_servers.join(", ")}`
-        : "";
-      const msg = `${built.length} live alert(s) · weather: ${report.weather_severe_ports.length}/${report.weather_ports_checked} ports severe · ${news}${failed}`;
-      if (report.failed_servers.length) toast.warning(msg);
-      else toast.success(msg);
+      const run = await api.runLiveSignals(gemini);
+      setLastRun(run);
+      const s = summarizeLiveRun(run);
+      if (s.cached)
+        toast.info(
+          `Cooldown: showing the last fetch (next real fetch in ${s.nextFetchInS ?? 0} s)`,
+        );
+      else if (s.failed.length)
+        toast.warning(
+          `${s.alertsCreated} live alert(s); failed: ${s.failed.map((f) => f.name).join(", ")}`,
+        );
+      else
+        toast.success(
+          s.allCalm ? "All monitored ports calm" : `${s.alertsCreated} live alert(s) created`,
+        );
       await refresh();
     } catch (e) {
       toast.error(`Live fetch failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setFetching(false);
+      void refreshLlm();
     }
   };
   const [category, setCategory] = useState<Category | "all">("all");
@@ -77,22 +88,31 @@ function AlertFeed() {
         subtitle="Every alert is fused from one or more signal agents, then grounded against past incidents and playbooks."
         actions={
           mode === "live" ? (
-            <button
-              onClick={() => void fetchLive()}
-              disabled={fetching || !liveSignals}
-              title={
-                liveSignals
-                  ? "Call weather-mcp, news-mcp and supplychain-mcp and run the alerts through the pipeline"
-                  : "Live signals are off: start the backend with VIGIL_SIGNALS=live"
-              }
-              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              <Radio className="h-4 w-4" />
-              {fetching ? "Fetching…" : "Fetch live signals"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <GeminiSwitch checked={useGemini} onChange={setUseGemini} busy={fetching} />
+              <button
+                onClick={() => void fetchLive()}
+                disabled={fetching || !canOperate}
+                title={
+                  canOperate
+                    ? "Call weather-mcp (Open-Meteo), news-mcp (GDELT) and supplychain-mcp (simulated) and run the alerts through the pipeline"
+                    : "Log in to fetch live signals"
+                }
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                <Radio className="h-4 w-4" />
+                {fetching
+                  ? fetchWithGemini
+                    ? "Fetching live signals… Gemini is reasoning (up to 2 minutes)"
+                    : "Fetching live signals… (up to a minute)"
+                  : "Fetch live signals"}
+              </button>
+            </div>
           ) : undefined
         }
       />
+
+      {lastRun && <LiveRunPanel run={lastRun} />}
 
       <div className="panel mb-4 flex flex-wrap items-center gap-2 p-3">
         <select
@@ -143,6 +163,67 @@ function AlertFeed() {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function LiveRunPanel({ run }: { run: ApiLiveRun }) {
+  const s = summarizeLiveRun(run);
+  const stat = (label: string, value: string) => (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-sm font-medium">{value}</p>
+    </div>
+  );
+  return (
+    <div className="panel mb-4 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="font-medium">
+          {s.cached ? "Last live fetch (cooldown)" : "Live fetch result"} ·{" "}
+          <span className="text-sm font-normal text-muted-foreground">
+            {formatDateTime(run.report.checked_at)}
+          </span>
+        </p>
+        {s.cached && (
+          <p className="text-xs text-muted-foreground">
+            One real fetch per 60 s: showing the last result, no new alerts. Next real fetch in{" "}
+            {s.nextFetchInS ?? 0} s.
+          </p>
+        )}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-5">
+        {stat("Ports checked", String(s.portsChecked))}
+        {stat(
+          "Ports severe",
+          s.portsSevere ? `${s.portsSevere} (${s.severePorts.join(", ")})` : "0",
+        )}
+        {stat(
+          "News fetched / kept",
+          s.newsFetched === null ? "no data" : `${s.newsFetched} / ${s.newsKept}`,
+        )}
+        {stat("Failed servers", s.failed.length ? String(s.failed.length) : "none")}
+        {stat(s.cached ? "Alerts in this result" : "Alerts created", String(s.alertsCreated))}
+      </div>
+      {s.failed.length > 0 && (
+        <ul className="mt-3 space-y-1 text-sm text-warn">
+          {s.failed.map((f) => (
+            <li key={f.name}>
+              {f.name} failed: {f.why}
+            </li>
+          ))}
+        </ul>
+      )}
+      {s.allCalm && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          All monitored ports calm — no live alerts were created.
+        </p>
+      )}
+      {s.geminiFallbacks.count > 0 && (
+        <p className="mt-3 text-sm text-warn">
+          Gemini fell back to rules for {s.geminiFallbacks.count} alert(s):{" "}
+          {s.geminiFallbacks.reasons.join(", ") || "no reason given"}.
+        </p>
+      )}
     </div>
   );
 }

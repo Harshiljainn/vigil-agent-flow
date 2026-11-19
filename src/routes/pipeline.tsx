@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ArrowRight, Play, ServerOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeading } from "@/components/bits";
+import { GeminiSwitch } from "@/components/GeminiSwitch";
 import { NodeDetail, kindIcon } from "@/components/TracePanel";
 import { PIPELINE_NODES, SIGNAL_NODES, type PipelineNode } from "@/data/system";
 import { api, type ApiAlertView } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { fallbackNotice } from "@/lib/webrun";
 import { useVigil } from "@/state/vigil";
 import { toast } from "sonner";
 
@@ -33,12 +35,14 @@ function errorText(e: unknown) {
 }
 
 function Pipeline() {
-  const { mode, alerts, refresh } = useVigil();
+  const { mode, alerts, refresh, refreshLlm, canOperate, llm } = useVigil();
+  const [useGemini, setUseGemini] = useState(false);
   const [alertId, setAlertId] = useState<string | null>(null);
   const [view, setView] = useState<ApiAlertView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState("synthesizer");
   const [running, setRunning] = useState(false);
+  const [runWithGemini, setRunWithGemini] = useState(false);
   const live = mode === "live";
 
   // Default to the newest alert once live data is in.
@@ -67,20 +71,25 @@ function Pipeline() {
   }, [live, alertId, view]);
 
   const runScenario = async () => {
+    const gemini = useGemini && llm?.available === true;
     setRunning(true);
+    setRunWithGemini(gemini);
     try {
-      const v = await api.runScenario();
+      const v = await api.runScenario(gemini);
       setView(v);
       setAlertId(v.alert.id);
       setSelected("gate");
       toast.success(
         `${v.alert.id} ran through the pipeline: ${v.decision.route === "auto_execute" ? "auto-executed (simulated)" : "escalated to human review"}`,
       );
+      const fb = fallbackNotice(v.reasoning);
+      if (gemini && fb) toast.warning(fb);
       await refresh();
     } catch (e) {
       toast.error(`Run failed: ${errorText(e)}`);
     } finally {
       setRunning(false);
+      void refreshLlm();
     }
   };
 
@@ -118,13 +127,18 @@ function Pipeline() {
                   </option>
                 ))}
               </select>
+              <GeminiSwitch checked={useGemini} onChange={setUseGemini} busy={running} />
               <button
                 onClick={() => void runScenario()}
-                disabled={running}
+                disabled={running || !canOperate}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 <Play className="h-4 w-4" />
-                {running ? "Running…" : "Run new scenario"}
+                {running
+                  ? runWithGemini
+                    ? "Gemini is reasoning… (can take 30 s)"
+                    : "Running…"
+                  : "Run new scenario"}
               </button>
             </div>
           ) : undefined
@@ -176,7 +190,14 @@ function Pipeline() {
             Could not load {alertId}: {loadError}
           </div>
         ) : view ? (
-          <NodeDetail node={node} view={view} />
+          <>
+            {fallbackNotice(view.reasoning) && (
+              <div className="panel mb-4 border-warn/50 p-4 text-sm text-warn">
+                {fallbackNotice(view.reasoning)}
+              </div>
+            )}
+            <NodeDetail node={node} view={view} />
+          </>
         ) : (
           <div className="panel p-5 text-sm text-muted-foreground">Loading trace…</div>
         )}

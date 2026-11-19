@@ -13,8 +13,8 @@ export { API_URL };
 const DEFAULT_TIMEOUT_MS = 5000;
 /** A new run may call Gemini (rate-limited, free tier), so it gets a much longer timeout. */
 const RUN_TIMEOUT_MS = 120_000;
-/** POST /signals/live/run starts three MCP servers and may wait on GDELT (slow, rate-limited). */
-const LIVE_TIMEOUT_MS = 240_000;
+/** POST /signals/live/run: up to 55 s of fetching plus up to 60 s of Gemini reasoning. */
+const LIVE_TIMEOUT_MS = 180_000;
 
 // ---------- backend types ----------
 
@@ -251,7 +251,24 @@ export type ApiLiveReport = {
   rules: Record<string, string>;
 };
 
-export type ApiLiveRun = { alerts: ApiAlertView[]; report: ApiLiveReport };
+export type ApiLiveRun = {
+  alerts: ApiAlertView[];
+  report: ApiLiveReport;
+  /** True inside the 60 s cooldown: the last result again, no new alerts. */
+  cached?: boolean;
+  next_fetch_in_s?: number | null;
+  gemini_used?: boolean;
+};
+
+/** GET /llm/status. The key is never returned. */
+export type ApiLlmStatus = {
+  available: boolean;
+  reason: "ok" | "no_key" | "budget_used";
+  model: string;
+  calls_today: number;
+  daily_budget: number;
+  remaining: number;
+};
 
 export type ApiRetrieverName = "tfidf" | "chroma" | "hybrid";
 
@@ -540,10 +557,19 @@ export const api = {
     request<ApiHealth>("/health", timeoutMs !== undefined ? { timeoutMs } : {}),
   alerts: () => request<ApiAlertView[]>("/alerts"),
   alert: (id: string) => request<ApiAlertView>(`/alerts/${encodeURIComponent(id)}`),
-  runScenario: () =>
-    request<ApiAlertView>("/scenarios/run", { method: "POST", timeoutMs: RUN_TIMEOUT_MS }),
-  runLiveSignals: () =>
-    request<ApiLiveRun>("/signals/live/run", { method: "POST", timeoutMs: LIVE_TIMEOUT_MS }),
+  runScenario: (useGemini = false) =>
+    request<ApiAlertView>("/scenarios/run", {
+      method: "POST",
+      body: { use_gemini: useGemini },
+      timeoutMs: RUN_TIMEOUT_MS,
+    }),
+  runLiveSignals: (useGemini = false) =>
+    request<ApiLiveRun>("/signals/live/run", {
+      method: "POST",
+      body: { use_gemini: useGemini },
+      timeoutMs: LIVE_TIMEOUT_MS,
+    }),
+  llmStatus: () => request<ApiLlmStatus>("/llm/status"),
   queue: () => request<ApiAuditRecord[]>("/queue"),
   review: (seq: number, body: ApiReviewIn) =>
     request<ApiAuditRecord>(`/queue/${seq}/review`, { method: "POST", body }),
